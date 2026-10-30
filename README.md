@@ -77,7 +77,16 @@ Four constants set the scale so that classic laboratory thresholds score about D
 the 1 dB level difference at 1 kHz (following Taal et al. 2012), noise and tone masking (ITU-R BS.1387), and
 amplitude-modulation detection on tones (He et al. 2008) and on noise (O'Connor et al. 2011).
 
-A function-by-function walk-through of the code is in [docs.md](docs.md).
+A function-by-function walk-through of the code is in [docs.md](docs.md). For a comparison with PESQ and ViSQOL on
+controlled changes, with audio, see [examples/](examples/).
+
+## Evaluation
+
+On [ODAQ](https://zenodo.org/records/10405774), an open dataset of music, film sound and speech over music rated by 26
+listeners (210 versions of 30 excerpts; Torcoli et al. 2024), `D_med` orders the versions like the listeners with a
+Spearman correlation of 0.85 (95 % interval 0.79–0.89). That is on par with Zimtohrli (0.83) and above ViSQOL (0.65 in
+audio mode) and PESQ (0.42). On degraded speech, in the TCD-VoIP dataset (Harte et al. 2015; packet loss, clipping,
+echo, competing speakers and noise, rated by 24 listeners), PESQ and ViSQOL follow listeners better.
 
 ## Limitations
 
@@ -93,12 +102,18 @@ A function-by-function walk-through of the code is in [docs.md](docs.md).
 ANNI is developed by DeepMark Inc. and released under the [MIT License](LICENSE).
 
 The auditory-nerve model is adapted from Mark R. Saddler's
-[auditory_machine_learning](https://github.com/msaddler/auditory_machine_learning) (MIT License, see the header of
-[`_auditory_model.py`](src/anni/_auditory_model.py)). If you use ANNI, please also cite:
+[auditory_machine_learning](https://github.com/msaddler/auditory_machine_learning). If you use ANNI, please also cite:
 
 - Saddler, M. R., & McDermott, J. H. (2024). Models optimized for real-world tasks reveal the task-dependent necessity
   of precise temporal coding in hearing. *Nature Communications*.
   [doi:10.1038/s41467-024-54700-5](https://doi.org/10.1038/s41467-024-54700-5)
+
+Listening-test data:
+
+- Torcoli, M., Wu, C.-W., Dick, S., Williams, P. A., Halimeh, M. M., Wolcott, W., & Habets, E. A. P. (2024). ODAQ: Open
+  Dataset of Audio Quality. *Proc. IEEE ICASSP*. [arXiv:2401.00197](https://arxiv.org/abs/2401.00197)
+- Harte, N., Gillen, E., & Hines, A. (2015). TCD-VoIP, a research database of degraded speech for assessing quality in
+  VoIP applications. *Proc. QoMEX*.
 
 Calibration references:
 
