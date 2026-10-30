@@ -5,7 +5,7 @@ next to the original, preferably on headphones. [`demo.py`](demo.py) makes the c
 (wideband), ViSQOL (speech and audio mode) and ANNI:
 
 ```bash
-pip install anni soundfile pesq visqol-python
+pip install anni soundfile pesq "visqol-python[lattice]"
 python examples/demo.py speech.wav [output_folder]
 ```
 
@@ -21,3 +21,11 @@ ViSQOL audio 4.73, ANNI 0). Bold marks a measure that misses or barely reacts to
 | `5_echo_hiding` | echo after 1 ms, 6 dB quieter | **4.56** | 3.47 | **4.64** | 4.95 | 2.91 |
 | `6_frame_clicks` | a tiny click every 80 ms | 4.13 | **4.62** | **4.68** | 3.14 | **0.08** |
 | `7_lowpass` | everything above 7 kHz removed | **4.43** | **4.60** | 2.59 | 13.14 | 4.95 |
+
+## Audio credit
+
+`0_original.wav` is an excerpt of "farah_faucet" by [tim.kahn](https://freesound.org/people/tim.kahn/)
+([freesound.org/s/75064](https://freesound.org/people/tim.kahn/sounds/75064/)), licensed under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), taken from the copy in the ODAQ dataset (Fraunhofer IIS and
+Netflix). Changes: cut to 6 s (0.2–6.2 s of the ODAQ file), mixed to mono and resampled to 44.1 kHz. The files `1_`
+to `7_` are this excerpt with the changes in the table.

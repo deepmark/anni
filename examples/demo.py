@@ -3,7 +3,7 @@
 Applies simple changes to a speech recording and scores each with PESQ (wideband), ViSQOL (speech and audio mode)
 and ANNI. The changed versions are written next to the original (by default to examples/out/) for listening.
 
-usage:  pip install anni soundfile pesq visqol-python
+usage:  pip install anni soundfile pesq "visqol-python[lattice]"
         python examples/demo.py speech.wav [output_folder]
 """
 import sys
@@ -32,8 +32,9 @@ def burst(x, rng):
     """One 10 ms noise burst, 6 dB below the speech level, in the quietest moment (a pause) of the recording."""
     n = int(0.010 * SR)
     hop = int(0.010 * SR)
-    e = [np.sum(x[i:i + 4 * hop] ** 2) for i in range(int(0.5 * SR), len(x) - int(0.5 * SR), hop)]
-    t0 = int(0.5 * SR) + int(np.argmin(e)) * hop + hop
+    edge = min(int(0.5 * SR), len(x) // 4)                  # keep away from the ends, also for short clips
+    e = [np.sum(x[i:i + 4 * hop] ** 2) for i in range(edge, len(x) - edge - 4 * hop, hop)]
+    t0 = edge + int(np.argmin(e)) * hop + hop
     y = x.copy()
     y[t0:t0 + n] += np.sqrt(np.mean(x ** 2)) * 10 ** (-6 / 20) * rng.standard_normal(n) * np.hanning(n)
     return y
@@ -101,7 +102,7 @@ def main(path, out=None):
     if sr != SR:
         x = soxr.resample(x, sr, SR)
     vs, va = VisqolApi(), VisqolApi()
-    vs.create(mode="speech")
+    vs.create(mode="speech", use_lattice_model=True)        # the mapper of the published table
     va.create(mode="audio")
     anni = ANNI()
     out = Path(out) if out else Path(__file__).resolve().parent / "out"
@@ -109,8 +110,8 @@ def main(path, out=None):
     sf.write(out / "0_original.wav", x, SR)
     print(f"{'change':20s} {'PESQ':>6s} {'ViSQOL speech':>14s} {'ViSQOL audio':>13s} {'ANNI D_peak':>12s} {'D_med':>6s}")
     for fname, (label, change) in CHANGES.items():
-        y = change(x, np.random.default_rng(0))
-        sf.write(out / f"{fname}.wav", np.clip(y, -1, 1), SR)
+        y = np.clip(change(x, np.random.default_rng(0)), -1, 1)    # the same samples are written and scored
+        sf.write(out / f"{fname}.wav", y, SR)
         s = score_all(x, y, anni, vs, va)
         print(f"{label:20s} {s['pesq']:6.2f} {s['visqol_speech']:14.2f} {s['visqol_audio']:13.2f} "
               f"{s['D_peak']:12.2f} {s['D_med']:6.2f}")
