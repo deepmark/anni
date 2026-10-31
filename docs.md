@@ -33,7 +33,6 @@ Adapted from Mark R. Saddler's [auditory_machine_learning](https://github.com/ms
 | `erbspace` | Frequencies evenly spaced on the ERB scale. Used to choose the 128 fibres' tuning frequencies from 80 Hz to 16 kHz: dense at low frequencies, sparse at high ones, as in the cochlea. |
 | `gammatone_filterbank_fir` | The cochlear filters: one band-pass filter per fibre that keeps only frequencies near its tuning frequency (4th-order gammatone, 1 ERB wide, about 130 Hz at 1 kHz), as 50 ms impulse responses. |
 | `ihc_lowpass_filter_fir` | The inner-hair-cell low-pass filter. Hair cells cannot follow fast vibrations, so the signal is smoothed: nominal cutoff 3 kHz, 7th order (in practice −3 dB at about 1.7 kHz). Designed at 100 kHz as in the Bruce, Erfani and Zilany (2018) model, then resampled to 44.1 kHz. |
-| `GradientStableSigmoid` | An ordinary S-shaped curve, 1 / (1 + exp(−k(x − x₀))), written as a custom PyTorch function so that its gradient is never NaN. |
 | `rate_level` | The firing-rate curve: turns the hair-cell signal's level (dB SPL) into spikes per second. About 6 spikes/s at 0 dB SPL, 125 at 40 dB (the midpoint) and 244 at 80 dB, never more than 250. This is where loud sounds saturate. |
 
 ## _core.py: ANNI's computation
