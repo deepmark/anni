@@ -28,7 +28,6 @@ def test_identical_signals_score_zero(measure, ref):
 
 
 def test_regression_values(measure, ref):
-    # values of the reference implementation with the published constants
     s = measure(ref, noisy(ref, 0.003), sr=SR)
     assert s["D_peak"] == pytest.approx(0.5433951020240784, rel=1e-5)
     assert s["D_med"] == pytest.approx(0.5027734041213989, rel=1e-5)
@@ -73,7 +72,6 @@ def test_dc_offset_is_removed_with_a_warning(measure, ref):
 
 
 def test_pauses_do_not_change_the_playback_level(ref):
-    # the level comes from the active parts only, so added silence must not change the playback gain
     from anni import _core
     x = torch.tensor(ref)
     padded = torch.cat([torch.zeros(SR), x])

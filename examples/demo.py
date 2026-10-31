@@ -3,7 +3,7 @@
 Applies simple changes to a speech recording and scores each with PESQ (wideband), ViSQOL (speech and audio mode)
 and ANNI. The changed versions are written next to the original (by default to examples/out/) for listening.
 
-usage:  pip install anni soundfile pesq "visqol-python[lattice]"
+usage:  pip install deepmark-anni soundfile pesq "visqol-python[lattice]"
         python examples/demo.py speech.wav [output_folder]
 """
 import sys

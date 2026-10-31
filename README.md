@@ -9,12 +9,12 @@ watermarks.
 > **Status: research prototype (v0.1).** ANNI is calibrated so that D = 1 marks a just-noticeable difference: the
 > point at which listeners in classic laboratory experiments start to detect a change. A score below 1 should
 > therefore mean the difference is hard to hear, even when comparing directly. This has not yet been confirmed by
-> listening tests on real-world audio, so we can't guarantee it.
+> listening tests on real-world audio.
 
 ## Install
 
 ```bash
-pip install anni
+pip install deepmark-anni
 ```
 
 Requires Python 3.9 or newer, PyTorch, NumPy and soxr.
@@ -58,27 +58,27 @@ scores can be expressed in dB as 20·log₁₀(D_B / D_A).
 - **Length:** clips from 0.5 s to about 10 s, as for PESQ and ViSQOL. Memory grows with length: a 5 s pair takes about
   1 s and 1.5 GB on a laptop CPU. On an NVIDIA GPU, use `ANNI(device="cuda")`.
 
-ANNI warns whenever it changes the inputs (resampling, cutting, removing a delay or a constant offset) and when the
-test signal is polarity-inverted. It also warns when the two signals correlate weakly (below 0.9), for example after a
-speech codec: the scores may then not be meaningful.
+ANNI warns whenever it changes the inputs (resampling, cutting, removing a delay or a constant offset between them)
+and when the test signal is polarity-inverted. It also warns when the two signals correlate weakly (below 0.9), for
+example after a speech codec: the scores may then not be meaningful.
 
 ## How it works
 
-1. Both signals are played at the same listening level, and the test signal is aligned to the reference.
-2. A filter models the outer and middle ear.
-3. An auditory-nerve model turns each signal into the firing rates of 128 nerve fibres tuned from 80 Hz to 16 kHz:
+1. A filter models the outer and middle ear.
+2. An auditory-nerve model turns each signal into the firing rates of 128 nerve fibres tuned from 80 Hz to 16 kHz:
    cochlear (gammatone) filters, inner-hair-cell rectification and smoothing, and a sigmoid firing-rate curve.
-4. Two observers compare the firing rates. Each change is weighed against the natural randomness of nerve firing,
+3. Two observers compare the firing rates. Each change is weighed against the natural randomness of nerve firing,
    which is what makes loud sounds mask quieter ones. One observer looks at slow changes in firing rate (level and
    colouration), the other at changes in how the rate fluctuates (roughness, flutter).
-5. The evidence is added up over fibres and over 200 ms windows. `D_peak` is the largest window, `D_med` the median.
+4. The evidence is added up over fibres and over 200 ms windows. `D_peak` is the largest window, `D_med` the median.
 
 Four constants set the scale so that classic laboratory thresholds score about D = 1: the threshold of hearing and
 the 1 dB level difference at 1 kHz (following Taal et al. 2012), noise and tone masking (ITU-R BS.1387), and
 amplitude-modulation detection on tones (He et al. 2008) and on noise (O'Connor et al. 2011).
 
-A function-by-function walk-through of the code is in [docs.md](docs.md). For a comparison with PESQ and ViSQOL on
-controlled changes, with audio, see [examples/](examples/).
+A function-by-function walk-through of the code is in [docs.md](https://github.com/deepmark/anni/blob/main/docs.md).
+For a comparison with PESQ and ViSQOL on controlled changes, with audio, see
+[examples/](https://github.com/deepmark/anni/tree/main/examples).
 
 ## Evaluation
 
@@ -90,8 +90,6 @@ echo, competing speakers and noise, rated by 24 listeners), PESQ and ViSQOL foll
 
 ## Limitations
 
-- D = 1 is calibrated on laboratory sounds (tones and noise). How well it marks the threshold for speech, music and
-  watermarks has not been tested with listeners yet.
 - It compares the signals moment by moment, so it does not suit audio whose timing or pitch has changed
   (time-stretching, pitch-shifting) or that went through a speech codec.
 - It doesn't see energy above 16 kHz or below 80 Hz, very fast fluctuations or fine timing structure.
@@ -99,7 +97,8 @@ echo, competing speakers and noise, rated by 24 listeners), PESQ and ViSQOL foll
 
 ## Credits and licence
 
-ANNI is developed by DeepMark Inc. and released under the [MIT License](LICENSE).
+ANNI is developed by DeepMark Inc. and released under the
+[MIT License](https://github.com/deepmark/anni/blob/main/LICENSE).
 
 The auditory-nerve model is adapted from Mark R. Saddler's
 [auditory_machine_learning](https://github.com/msaddler/auditory_machine_learning). If you use ANNI, please also cite:
@@ -119,7 +118,7 @@ Calibration references:
 
 - Taal, C. H., Hendriks, R. C., & Heusdens, R. (2012). A low-complexity spectro-temporal distortion measure for audio
   processing applications. *IEEE Transactions on Audio, Speech, and Language Processing*, 20(5).
-  [doi:10.1109/TASL.2012.2186129](https://doi.org/10.1109/TASL.2012.2186129)
+  [doi:10.1109/TASL.2012.2184753](https://doi.org/10.1109/TASL.2012.2184753)
 - ITU-R BS.1387: Method for objective measurements of perceived audio quality (PEAQ).
 - He, N., Mills, J. H., Ahlstrom, J. B., & Dubno, J. R. (2008). Age-related differences in the temporal modulation
   transfer function with pure-tone carriers. *The Journal of the Acoustical Society of America*, 124(6), 3841–3849.
