@@ -44,14 +44,9 @@ def erbspace(start, stop, num):
     return erb2freq(np.linspace(freq2erb(start), freq2erb(stop), num=num))
 
 
-def gammatone_filterbank_fir(sr, cfs, fir_dur=0.05, order=4, bw_mult=None):
+def gammatone_filterbank_fir(sr, cfs, fir_dur=0.05, order=4, bw_mult=1.0):
     """Impulse responses of a gammatone filterbank, shape (n_filters, int(sr * fir_dur))."""
     cfs = np.array(cfs).reshape([-1])
-    if bw_mult is None:
-        bw_mult = np.divide(math.factorial(order - 1) ** 2,
-                            (np.pi * math.factorial(2 * order - 2) * 2 ** (-2 * order + 2)))
-    else:
-        bw_mult = np.array(bw_mult)
     bw = 2 * np.pi * bw_mult * (24.7 + cfs / 9.265)
     wc = 2 * np.pi * cfs
     t = np.arange(0, fir_dur, 1 / sr)

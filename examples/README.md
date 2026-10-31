@@ -5,7 +5,7 @@ next to the original, preferably on headphones. [`demo.py`](demo.py) makes the c
 (wideband), ViSQOL (speech and audio mode) and ANNI:
 
 ```bash
-pip install anni soundfile pesq "visqol-python[lattice]"
+pip install deepmark-anni soundfile pesq "visqol-python[lattice]"
 python examples/demo.py speech.wav [output_folder]
 ```
 

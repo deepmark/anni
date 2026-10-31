@@ -3,7 +3,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "anni"
+name = "deepmark-anni"
 dynamic = ["version"]
 description = "ANNI (Auditory Nerve Noticeability Index): how noticeable the difference between two audio signals is"
 readme = "README.md"
@@ -18,11 +18,10 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 
-# CPU and GPU both work; install the torch build for your CUDA version from https://pytorch.org if needed.
 dependencies = [
     "numpy>=1.21",
-    "torch>=2.0",
-    "soxr>=0.3",
+    "torch>=2.4.1",
+    "soxr>=0.4",
 ]
 
 [project.urls]
