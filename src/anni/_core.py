@@ -124,7 +124,7 @@ class Nerve:
     def __init__(self, device="cpu"):
         self.device = torch.device(device)
         cfs = _auditory_model.erbspace(80.0, 16000.0, 128)
-        g = torch.as_tensor(_auditory_model.gammatone_filterbank_fir(SR, cfs, fir_dur=0.05), dtype=DT)
+        g = torch.as_tensor(_auditory_model.gammatone_filterbank_fir(SR, cfs, fir_dur=0.05, bw_mult=1.0), dtype=DT)
         lp = torch.as_tensor(_auditory_model.ihc_lowpass_filter_fir(SR, 0.05, cutoff=3000.0, order=7), dtype=DT)
         self.cfs = torch.as_tensor(cfs, dtype=DT)
         self.g, self.lp = g.to(device), lp.to(device)
