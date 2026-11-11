@@ -16,6 +16,10 @@ SR = 44100                     # the model's input rate
 FS_N = 11025                   # nerve output rate (stride 4)
 P_REF = 20e-6                  # Pa at 0 dB SPL
 DT = torch.float32
+# long signals are processed in blocks, so memory does not grow with their length (the scores do not change)
+NERVE_BLOCK_S = 2.0            # nerve model: seconds per block
+OBSERVER_BLOCK_S = 10.0        # observers: seconds of 200 ms window positions per block
+OBSERVER_CONTEXT_S = 2.0       # observers: history before each block, for their slow filters to settle
 # calibration constants: internal-noise floor r0 (spikes/s), pattern gain kP, texture gain kS, texture floor e0
 CONSTANTS = dict(r0=66.56840796512564, kP=7.440094426024921, kS=0.05248517778798395, e0=2.3703160271327422e-05)
 
@@ -132,14 +136,16 @@ class Nerve:
         tau_g = torch.argmax(analytic(g).abs(), dim=-1).to(DT) / SR          # gammatone envelope peak
         tau_l = (torch.arange(len(lp), dtype=DT) * lp).sum() / lp.sum() / SR  # low-pass centroid
         self.delays = torch.round((tau_g + tau_l) * FS_N).long()              # per-fibre delay, output samples
+        self._spectra = None                                                  # filter spectra of the last length
 
     def forward(self, x):
         """x [B, T] (Pa) -> firing rates [B, 128, ceil(T / 4)] (spikes/s)."""
         T = x.shape[-1]
         n1 = next_fast_len(T + self.g.shape[-1] - 1)
         n2 = next_fast_len(T + self.lp.shape[-1] - 1)
-        G = torch.fft.rfft(self.g, n=n1)
-        LP = torch.fft.rfft(self.lp, n=n2)
+        if self._spectra is None or self._spectra[0] != (n1, n2):      # all full blocks share one length
+            self._spectra = ((n1, n2), torch.fft.rfft(self.g, n=n1), torch.fft.rfft(self.lp, n=n2))
+        _, G, LP = self._spectra
         out = []
         for xb in x:                                       # one row at a time keeps the memory down
             y = torch.fft.irfft(torch.fft.rfft(xb, n=n1)[None, :] * G, n=n1)[:, :T]
@@ -158,11 +164,40 @@ class Nerve:
 
     def rates(self, p):
         """p [B, T] pressure (Pa) at 44.1 kHz -> ear filter -> polarity-averaged, delay-compensated rates, returned
-        on the CPU for the observers."""
+        on the CPU for the observers. Whole signal at once; ANNI itself uses binned_rates."""
         x = ear_filter(p.to(device=self.device, dtype=DT))
         r = self.forward(torch.cat([x, -x]))
         r = 0.5 * (r[:len(x)] + r[len(x):])
         return self.compensate(r).cpu()
+
+    def binned_rates(self, p, bin_n, block_s=NERVE_BLOCK_S):
+        """p [T] pressure (Pa) at 44.1 kHz -> ear filter -> polarity-averaged, delay-compensated rates averaged in
+        bins of bin_n output samples, [128, nb], on the CPU. The same as binning rates(p), but computed in blocks of
+        about block_s seconds, so memory does not grow with the length of p. This is exact: an output sample depends
+        only on the last len(g) + len(lp) input samples (two FIR filters; the rest is sample by sample), so each block
+        gets that much input before it, and the largest fibre delay after it."""
+        x = ear_filter(p.to(device=self.device, dtype=DT))
+        T = x.shape[-1]
+        st = self.stride
+        N = -(-T // st)                                                # output samples of forward() for all of x
+        nb = N // bin_n
+        left = -(-(self.g.shape[-1] + self.lp.shape[-1] - 2) // st) * st     # input history, a multiple of the stride
+        right = st * (int(self.delays.max()) + 1)                     # input after the block, for the delay shift
+        per_block = max(1, int(round(block_s * FS_N / bin_n)))       # bins per block
+        delays = self.delays.to(self.device)
+        out = []
+        for k0 in range(0, nb, per_block):
+            k1 = min(nb, k0 + per_block)
+            o0, o1 = k0 * bin_n, k1 * bin_n                            # output samples of this block
+            a, b = max(0, st * o0 - left), min(T, st * o1 + right)     # input samples it needs
+            seg = x[a:b]
+            r = self.forward(torch.stack([seg, -seg]))
+            r = 0.5 * (r[0] + r[1])                                    # [128, ceil((b - a) / stride)]
+            idx = torch.arange(o0, o1, device=self.device)[None, :] + delays[:, None] - a // st
+            inside = idx < r.shape[-1]                                 # past the end of the signal: zero, as in compensate
+            rc = torch.gather(r, 1, idx.clamp(max=r.shape[-1] - 1)) * inside
+            out.append(rc.reshape(rc.shape[0], k1 - k0, bin_n).mean(-1).cpu())
+        return torch.cat(out, -1) if out else torch.zeros(len(self.cfs), 0, dtype=DT)
 
 
 # ------------------------------------------------------------------------------------------------ observers
@@ -278,10 +313,28 @@ class Observer:
         return P_w + lr2.sum((0, 1))
 
 
-def scores(ob, Rx, Ry, p=CONSTANTS):
-    """D_peak (most noticeable 200 ms window) and D_med (median window) as tensors."""
-    bx, by = ob.bin(Rx), ob.bin(Ry)
-    tot = ob.window_d2(bx, by, p)
+def window_d2_blocks(ob, bx, by, p=CONSTANTS, block_s=OBSERVER_BLOCK_S, context_s=OBSERVER_CONTEXT_S):
+    """Observer.window_d2 over binned rates [128, nb], computed in blocks of about block_s seconds of window
+    positions, so memory does not grow with the length. Each block starts context_s seconds early, so that the
+    observers' slow filters have settled: what is left of the history before that is below 1e-7 of it (the slowest
+    filter, the 4 Hz band, decays about e^-9 per second). The first block starts at the signal's start, as before."""
+    nb = bx.shape[-1]
+    npos = nb - ob.W + 1
+    per_block = max(1, int(round(block_s / ob.dt)))
+    ctx = int(round(context_s / ob.dt))
+    out = []
+    for q0 in range(0, max(npos, 0), per_block):
+        q1 = min(npos, q0 + per_block)
+        s0 = q0 - ctx if q0 > ctx else 0
+        e = q1 + ob.W - 1
+        out.append(ob.window_d2(bx[:, s0:e], by[:, s0:e], p)[q0 - s0:])
+    return torch.cat(out) if out else torch.zeros(0, dtype=DT)
+
+
+def scores(ob, bx, by, p=CONSTANTS, **blocks):
+    """D_peak (most noticeable 200 ms window) and D_med (median window) as tensors, from binned rates. blocks are
+    passed to window_d2_blocks (one huge block, e.g. block_s=1e9, computes all windows at once)."""
+    tot = window_d2_blocks(ob, bx, by, p, **blocks)
     ok = ob.valid(len(tot), bx.shape[-1])
     d2 = tot[ok]
     return dict(D_peak=torch.sqrt(d2.max()), D_med=torch.median(torch.sqrt(torch.clamp(d2, min=0))))
