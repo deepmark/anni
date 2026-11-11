@@ -5,7 +5,7 @@ the auditory-nerve model components in [`_auditory_model.py`](src/anni/_auditory
 
 ```
 measure.py:          reference, test -> checks, resampling, alignment, playback level -> sound pressure (Pa)
-_core.py:            ear_filter -> Nerve.rates -> Observer.window_d2 -> scores -> D_peak, D_med
+_core.py:            ear_filter -> Nerve.binned_rates -> window_d2_blocks -> scores_binned -> D_peak, D_med
 _auditory_model.py:  used by Nerve: cochlear (gammatone) filters, hair-cell low-pass, firing-rate curve
 ```
 
@@ -17,7 +17,7 @@ _auditory_model.py:  used by Nerve: cochlear (gammatone) filters, hair-cell low-
 | `ANNI.__call__(reference, test, sr)` | Scores `test` against `reference` and returns `{"D_peak": ..., "D_med": ...}`. |
 | `_check` | Converts an input to a 1-D NumPy array and rejects multichannel or non-finite input. |
 | `_prepare` | Turns the inputs into sound-pressure signals at 44.1 kHz: removes each signal's constant (DC) offset, cuts them to equal length, resamples to 44.1 kHz, removes a constant delay (`align`) and applies one playback gain to both (`pa_gain`). |
-| `_forward` | Runs the nerve model on both signals and returns the scores. |
+| `_forward` | Runs the nerve model on both signals (`binned_rates`) and returns the scores (`scores_binned`). |
 
 The order matters: the reference sets the playback level and the test signal is the one shifted into alignment,
 so swapping the two arguments can change the scores slightly.
@@ -72,7 +72,8 @@ Adapted from Mark R. Saddler's [auditory_machine_learning](https://github.com/ms
 | `__init__` | Builds the cochlear and hair-cell filters, stores the 128 tuning frequencies and computes each fibre's delay: the time to the peak of its cochlear filter's response plus the low-pass filter's delay. Low-frequency fibres respond later. |
 | `forward(x)` | The model, for each signal: cochlear filters → keep the positive half-waves (the hair cell responds to movement in one direction) → hair-cell low-pass, keeping every 4th sample (44.1 → 11.025 kHz) → positive half-waves → firing-rate curve. Output: firing rate in spikes/s for 128 fibres over time. |
 | `compensate(r)` | Shifts each fibre earlier by its own delay, so that all fibres line up in time. |
-| `rates(p)` | The full front end: `ear_filter` → `forward` on the signal and on its upside-down copy, averaged (polarity averaging, so the comparison concerns firing rates rather than the exact waveform phase) → `compensate`. |
+| `rates(p)` | The full front end: `ear_filter` → `forward` on the signal and on its upside-down copy, averaged (polarity averaging, so the comparison concerns firing rates rather than the exact waveform phase) → `compensate`. Whole signal at once. |
+| `binned_rates(p, bin_n)` | The same as `rates`, already averaged into 1.9 ms bins, but computed in blocks of 2 s so that memory does not grow with the length of the signal. The result is the same as for the whole signal (up to rounding): each output sample depends only on the last 0.1 s of input (two 50 ms filters), so every block gets that much input before it, and the largest fibre delay after it. |
 
 ### Filter design for the observers
 
@@ -96,4 +97,6 @@ Adapted from Mark R. Saddler's [auditory_machine_learning](https://github.com/ms
 
 | Function | What it does |
 |---|---|
-| `scores(ob, Rx, Ry)` | D for each window is the square root of its total evidence. `D_peak` is the largest D over the windows, `D_med` the median. |
+| `window_d2_blocks(ob, bx, by)` | `window_d2` over binned rates, in blocks of 10 s of windows, each starting 2 s early so that the observers' slow filters have settled. What is left of the earlier history is below 1e-7, so the scores do not change. |
+| `scores_binned(ob, bx, by)` | D for each window is the square root of its total evidence. `D_peak` is the largest D over the windows, `D_med` the median. |
+| `scores(ob, Rx, Ry)` | The same from whole, unbinned rates, all at once. |

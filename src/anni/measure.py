@@ -86,9 +86,10 @@ class ANNI:
         return g * x, g * y
 
     def _forward(self, px, py):
-        """Pressure signals -> {"D_peak", "D_med"} tensors."""
-        R = self._nerve.rates(torch.stack([px, py]))
-        return _core.scores(self._observer, R[0], R[1])
+        """Pressure signals -> {"D_peak", "D_med"} tensors. Both run in blocks, so long signals fit in memory."""
+        bx = self._nerve.binned_rates(px, self._observer.bin_n)
+        by = self._nerve.binned_rates(py, self._observer.bin_n)
+        return _core.scores_binned(self._observer, bx, by)
 
     @staticmethod
     def _check(s, name):

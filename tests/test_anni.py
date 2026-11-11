@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import torch
 
-from anni import ANNI
+from anni import ANNI, _core
 
 SR = 44100
 
@@ -91,3 +91,21 @@ def test_input_checks(measure, ref):
         measure(ref, noisy(ref, 0.003)[:-100], sr=SR)
     with pytest.warns(UserWarning, match="polarity-inverted"):
         measure(ref, -noisy(ref, 0.003), sr=SR)
+
+
+def test_blocks_give_the_same_scores_as_the_whole_signal(measure, ref):
+    """Long signals are processed in blocks to save memory; tiny blocks (stressing the block edges) must give the
+    scores of the whole-signal computation."""
+    x = np.concatenate([ref, ref, ref])
+    y = noisy(x, 0.01)
+    burst = 0.3 * np.random.default_rng(3).standard_normal(441)
+    y[len(ref):len(ref) + 441] += burst - burst.mean()                 # a 10 ms noise burst near a block edge
+    with torch.no_grad():
+        px, py = measure._prepare(x, y, SR)
+        R = measure._nerve.rates(torch.stack([px, py]))
+        whole = _core.scores(measure._observer, R[0], R[1])
+        bx = measure._nerve.binned_rates(px, measure._observer.bin_n, block_s=0.3)
+        by = measure._nerve.binned_rates(py, measure._observer.bin_n, block_s=0.3)
+        blocks = _core.scores_binned(measure._observer, bx, by, block_s=0.5)
+    for k in ("D_peak", "D_med"):
+        assert float(blocks[k]) == pytest.approx(float(whole[k]), rel=1e-4, abs=1e-4)
