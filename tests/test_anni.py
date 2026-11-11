@@ -103,9 +103,9 @@ def test_blocks_give_the_same_scores_as_the_whole_signal(measure, ref):
     with torch.no_grad():
         px, py = measure._prepare(x, y, SR)
         R = measure._nerve.rates(torch.stack([px, py]))
-        whole = _core.scores(measure._observer, R[0], R[1])
+        whole = _core.scores(measure._observer, measure._observer.bin(R[0]), measure._observer.bin(R[1]), block_s=1e9)
         bx = measure._nerve.binned_rates(px, measure._observer.bin_n, block_s=0.3)
         by = measure._nerve.binned_rates(py, measure._observer.bin_n, block_s=0.3)
-        blocks = _core.scores_binned(measure._observer, bx, by, block_s=0.5)
+        blocks = _core.scores(measure._observer, bx, by, block_s=0.5)
     for k in ("D_peak", "D_med"):
         assert float(blocks[k]) == pytest.approx(float(whole[k]), rel=1e-4, abs=1e-4)

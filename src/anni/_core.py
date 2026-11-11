@@ -136,14 +136,16 @@ class Nerve:
         tau_g = torch.argmax(analytic(g).abs(), dim=-1).to(DT) / SR          # gammatone envelope peak
         tau_l = (torch.arange(len(lp), dtype=DT) * lp).sum() / lp.sum() / SR  # low-pass centroid
         self.delays = torch.round((tau_g + tau_l) * FS_N).long()              # per-fibre delay, output samples
+        self._spectra = None                                                  # filter spectra of the last length
 
     def forward(self, x):
         """x [B, T] (Pa) -> firing rates [B, 128, ceil(T / 4)] (spikes/s)."""
         T = x.shape[-1]
         n1 = next_fast_len(T + self.g.shape[-1] - 1)
         n2 = next_fast_len(T + self.lp.shape[-1] - 1)
-        G = torch.fft.rfft(self.g, n=n1)
-        LP = torch.fft.rfft(self.lp, n=n2)
+        if self._spectra is None or self._spectra[0] != (n1, n2):      # all full blocks share one length
+            self._spectra = ((n1, n2), torch.fft.rfft(self.g, n=n1), torch.fft.rfft(self.lp, n=n2))
+        _, G, LP = self._spectra
         out = []
         for xb in x:                                       # one row at a time keeps the memory down
             y = torch.fft.irfft(torch.fft.rfft(xb, n=n1)[None, :] * G, n=n1)[:, :T]
@@ -329,18 +331,10 @@ def window_d2_blocks(ob, bx, by, p=CONSTANTS, block_s=OBSERVER_BLOCK_S, context_
     return torch.cat(out) if out else torch.zeros(0, dtype=DT)
 
 
-def scores_binned(ob, bx, by, p=CONSTANTS, **blocks):
-    """D_peak (most noticeable 200 ms window) and D_med (median window) as tensors, from binned rates."""
+def scores(ob, bx, by, p=CONSTANTS, **blocks):
+    """D_peak (most noticeable 200 ms window) and D_med (median window) as tensors, from binned rates. blocks are
+    passed to window_d2_blocks (one huge block, e.g. block_s=1e9, computes all windows at once)."""
     tot = window_d2_blocks(ob, bx, by, p, **blocks)
-    ok = ob.valid(len(tot), bx.shape[-1])
-    d2 = tot[ok]
-    return dict(D_peak=torch.sqrt(d2.max()), D_med=torch.median(torch.sqrt(torch.clamp(d2, min=0))))
-
-
-def scores(ob, Rx, Ry, p=CONSTANTS):
-    """D_peak and D_med from whole (unbinned) rates, all at once."""
-    bx, by = ob.bin(Rx), ob.bin(Ry)
-    tot = ob.window_d2(bx, by, p)
     ok = ob.valid(len(tot), bx.shape[-1])
     d2 = tot[ok]
     return dict(D_peak=torch.sqrt(d2.max()), D_med=torch.median(torch.sqrt(torch.clamp(d2, min=0))))

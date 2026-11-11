@@ -5,7 +5,7 @@ the auditory-nerve model components in [`_auditory_model.py`](src/anni/_auditory
 
 ```
 measure.py:          reference, test -> checks, resampling, alignment, playback level -> sound pressure (Pa)
-_core.py:            ear_filter -> Nerve.binned_rates -> window_d2_blocks -> scores_binned -> D_peak, D_med
+_core.py:            ear_filter -> Nerve.binned_rates -> window_d2_blocks -> scores -> D_peak, D_med
 _auditory_model.py:  used by Nerve: cochlear (gammatone) filters, hair-cell low-pass, firing-rate curve
 ```
 
@@ -17,7 +17,7 @@ _auditory_model.py:  used by Nerve: cochlear (gammatone) filters, hair-cell low-
 | `ANNI.__call__(reference, test, sr)` | Scores `test` against `reference` and returns `{"D_peak": ..., "D_med": ...}`. |
 | `_check` | Converts an input to a 1-D NumPy array and rejects multichannel or non-finite input. |
 | `_prepare` | Turns the inputs into sound-pressure signals at 44.1 kHz: removes each signal's constant (DC) offset, cuts them to equal length, resamples to 44.1 kHz, removes a constant delay (`align`) and applies one playback gain to both (`pa_gain`). |
-| `_forward` | Runs the nerve model on both signals (`binned_rates`) and returns the scores (`scores_binned`). |
+| `_forward` | Runs the nerve model on both signals (`binned_rates`) and returns the scores (`scores`). |
 
 The order matters: the reference sets the playback level and the test signal is the one shifted into alignment,
 so swapping the two arguments can change the scores slightly.
@@ -98,5 +98,4 @@ Adapted from Mark R. Saddler's [auditory_machine_learning](https://github.com/ms
 | Function | What it does |
 |---|---|
 | `window_d2_blocks(ob, bx, by)` | `window_d2` over binned rates, in blocks of 10 s of windows, each starting 2 s early so that the observers' slow filters have settled. What is left of the earlier history is below 1e-7, so the scores do not change. |
-| `scores_binned(ob, bx, by)` | D for each window is the square root of its total evidence. `D_peak` is the largest D over the windows, `D_med` the median. |
-| `scores(ob, Rx, Ry)` | The same from whole, unbinned rates, all at once. |
+| `scores(ob, bx, by)` | D for each window is the square root of its total evidence. `D_peak` is the largest D over the windows, `D_med` the median. |

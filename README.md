@@ -55,8 +55,9 @@ scores can be expressed in dB as 20·log₁₀(D_B / D_A).
 - **Playback level:** the reference is played at 65 dB SPL, about conversational speech (`ANNI(level=...)` changes
   this). Both signals get the same gain, so a level change in the test signal counts as a difference.
 - **Timing:** a constant delay of up to ±10 ms is removed. If the lengths differ, the longer signal is cut.
-- **Length:** clips from 0.5 s to about 10 s, as for PESQ and ViSQOL. Memory grows with length: a 5 s pair takes about
-  1 s and 1.5 GB on a laptop CPU. On an NVIDIA GPU, use `ANNI(device="cuda")`.
+- **Length:** at least 0.5 s; typical test clips are about 10 s long, as for PESQ and ViSQOL. A 5 s pair takes about
+  1 s and 0.9 GB on a laptop CPU. Long files are processed in blocks, so memory grows only slowly with length
+  (2 min: about 20 s and 1.2 GB). On an NVIDIA GPU, use `ANNI(device="cuda")`.
 
 ANNI warns whenever it changes the inputs (resampling, cutting, removing a delay or a constant offset between them)
 and when the test signal is polarity-inverted. It also warns when the two signals correlate weakly (below 0.9), for
