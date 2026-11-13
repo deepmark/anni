@@ -1,11 +1,14 @@
 # How ANNI works, function by function
 
-The public interface is in [`measure.py`](src/anni/measure.py), the computation in [`_core.py`](src/anni/_core.py), and
-the auditory-nerve model components in [`_auditory_model.py`](src/anni/_auditory_model.py).
+The public interface is in [`measure.py`](src/anni/measure.py) (the measure) and [`loss.py`](src/anni/loss.py) (the
+training loss), the computation in [`_core.py`](src/anni/_core.py), and the auditory-nerve model components in
+[`_auditory_model.py`](src/anni/_auditory_model.py).
 
 ```
 measure.py:          reference, test -> checks, resampling, alignment, playback level -> sound pressure (Pa)
+loss.py:             reference, test (aligned, 44.1 kHz) -> playback level -> sound pressure (Pa)
 _core.py:            ear_filter -> Nerve.binned_rates -> window_d2_blocks -> scores -> D_peak, D_med
+                     (the loss: ear_filter -> Nerve.forward -> Observer.window_d2 -> p-mean of the window scores)
 _auditory_model.py:  used by Nerve: cochlear (gammatone) filters, hair-cell low-pass, firing-rate curve
 ```
 
@@ -22,6 +25,22 @@ _auditory_model.py:  used by Nerve: cochlear (gammatone) filters, hair-cell low-
 The order matters: the reference sets the playback level and the test signal is the one shifted into alignment,
 so swapping the two arguments can change the scores slightly.
 
+## loss.py: the training loss
+
+| Method | What it does |
+|---|---|
+| `ANNILoss(target=0.5, p=6.0, level=65.0, polarities=2, device="cpu")` | Builds the nerve model and the observers once. `target` is the noticeability still allowed (d′); `p` the exponent of the summary over windows; `level` the playback level of the reference in dB SPL; `polarities` 2 as ANNI or 1 for about half the memory. |
+| `forward(reference, test)` | The loss: mean over the batch of max(0, score − target)². Signals are `[batch, time]` or `[time]` at 44.1 kHz. |
+| `soft_score(reference, test)` | The score per example: the p-mean of the window d′ values, (mean of d′ᵖ)^(1/p), computed relative to the largest window so that large p stays finite. p = 1 is the mean, p = ∞ the peak (equal to ANNI's `D_peak` for aligned signals). With many windows a finite p stays below the peak. |
+| `window_scores(reference, test)` | d′ of every 200 ms window that ANNI counts, for inspection. |
+| `_window_d2` | As in ANNI: each signal's DC offset removed, a silent reference rejected, one playback gain per example from the reference; then the nerve model on both signals (the reference without gradients), the observers, and the windows ANNI counts. No alignment and no resampling: gradients cannot pass through choosing a delay. |
+| `_rates` | `ear_filter` → `Nerve.forward` (one or both polarities) → `compensate` → 1.9 ms bins, for a whole batch. |
+| `_apply` | Lets `.to()`, `.cuda()` and `.cpu()` move the nerve model to another device. Only the device follows: the model stays in 32-bit after `.half()` or a bfloat16 conversion. Signals on another device than the loss are an error, not a silent copy. |
+
+**Why `level` matters.** Sounds below the threshold of hearing do not count. At 65 dB, quiet parts of a change (in
+pauses, or at frequencies where hearing is weak) can stay below it; played louder, they become audible. A model trained
+at 65 dB learns to hide there, so train at the loudest level you expect listeners to use.
+
 ## _auditory_model.py: the auditory-nerve components
 
 Adapted from Mark R. Saddler's [auditory_machine_learning](https://github.com/msaddler/auditory_machine_learning)
@@ -34,7 +53,7 @@ Adapted from Mark R. Saddler's [auditory_machine_learning](https://github.com/ms
 | `gammatone_filterbank_fir` | The cochlear filters: one band-pass filter per fibre that keeps only frequencies near its tuning frequency (4th-order gammatone, 1 ERB wide, about 130 Hz at 1 kHz), as 50 ms impulse responses. |
 | `ihc_lowpass_filter_fir` | The inner-hair-cell low-pass filter. Hair cells cannot follow fast vibrations, so the signal is smoothed: nominal cutoff 3 kHz, 7th order (in practice −3 dB at about 1.7 kHz). Designed at 100 kHz as in the Bruce, Erfani and Zilany (2018) model, then resampled to 44.1 kHz. |
 | `GradientStableSigmoid` | An ordinary S-shaped curve, 1 / (1 + exp(−k(x − x₀))), written as a custom PyTorch function so that its gradient is never NaN. |
-| `rate_level` | The firing-rate curve: turns the hair-cell signal's level (dB SPL) into spikes per second. About 6 spikes/s at 0 dB SPL, 125 at 40 dB (the midpoint) and 244 at 80 dB, never more than 250. This is where loud sounds saturate. |
+| `rate_level` | The firing-rate curve: turns the hair-cell signal's level (dB SPL) into spikes per second. About 6 spikes/s at 0 dB SPL, 125 at 40 dB (the midpoint) and 244 at 80 dB, never more than 250. This is where loud sounds saturate. The signal gets a floor of 1e-20 Pa before the logarithm, so that silent samples (exactly 0) give a finite gradient. |
 
 ## _core.py: ANNI's computation
 
