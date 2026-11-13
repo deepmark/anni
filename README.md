@@ -92,12 +92,12 @@ listeners of all 38 measures, by both rank correlations (Spearman and Kendall):
 | Measure | Spearman | Kendall |
 |---|---|---|
 | **ANNI `D_med`** | **0.910** (1st) | **0.927** (1st) |
-| SCOREQ (reference mode) | 0.851 (2nd) | 0.884 (2nd) |
+| SCOREQ `ref` | 0.851 (2nd) | 0.884 (2nd) |
 | 2f-model | 0.840 (3rd) | 0.881 (3rd) |
 | ANNI `D_peak` | 0.834 (4th) | 0.867 (5th) |
-| PESQ (c2) | 0.812 (10th) | 0.845 (10th) |
+| PESQ `c2` | 0.812 (10th) | 0.845 (10th) |
 | Zimtohrli | 0.801 (11th) | 0.836 (11th) |
-| ViSQOL v3 (audio) | 0.657 (23rd) | 0.701 (23rd) |
+| ViSQOL v3 `audio` | 0.657 (23rd) | 0.701 (23rd) |
 
 Per listening test, `D_med` ranks 1st on coding artefacts in music and film sound and on stereo coding, 2nd on spatial
 distortions, and 20th on speech from neural codecs, where the decoded speech no longer follows the original moment by
