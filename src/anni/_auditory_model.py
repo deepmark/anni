@@ -107,5 +107,6 @@ def rate_level(x, rate_spont=0.0, rate_max=250.0, threshold=0.0, dynamic_range=8
     x0 = threshold - (math.log((1 / y_threshold) - 1) / (-k))
     k_t = torch.tensor(k, dtype=x.dtype, device=x.device)
     x0_t = torch.tensor(x0, dtype=x.dtype, device=x.device)
+    x = x.clamp_min(1e-20)              # silent samples are exactly 0: keeps the gradient of the log finite (ANNI)
     s = GradientStableSigmoid.apply(20 * torch.log10(x / 20e-6), k_t, x0_t)
     return rate_spont + (rate_max - rate_spont) * s

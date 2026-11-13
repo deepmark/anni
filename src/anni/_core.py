@@ -301,16 +301,18 @@ class Observer:
         return (pos >= t0b) & (pos + self.W <= nb - t1b)
 
     def window_d2(self, Rx, Ry, p):
-        """Total evidence (d'^2) in each 200 ms window: pattern + texture."""
+        """Total evidence (d'^2) in each 200 ms window: pattern + texture. Rx, Ry: [..., 128, nb] (a batch works
+        too); returns [..., nb - W + 1]."""
         rbar = 0.5 * (Rx + Ry)
         db, xb, yb = self.split(Ry - Rx), self.split(Rx), self.split(Ry)
         d2P = p["kP"] * self.dz * self.dt * db[0] ** 2 / (rbar + p["r0"])
-        P_w = self.movmean(d2P.sum(0)) * self.W
+        P_w = self.movmean(d2P.sum(-2)) * self.W
         mx, my = self.movmean(Rx), self.movmean(Ry)
         ex = self.movmean(xb[1:] ** 2) / (mx + p["r0"]) ** 2
         ey = self.movmean(yb[1:] ** 2) / (my + p["r0"]) ** 2
-        lr2 = p["kS"] * self.dz * torch.log((ey + p["e0"]) / (ex + p["e0"])) ** 2 * self.mask[:, :, None]
-        return P_w + lr2.sum((0, 1))
+        mask = self.mask.to(ex.device, ex.dtype).reshape(self.mask.shape[0], *[1] * (ex.dim() - 3), -1, 1)
+        lr2 = p["kS"] * self.dz * torch.log((ey + p["e0"]) / (ex + p["e0"])) ** 2 * mask
+        return P_w + lr2.sum((0, -2))
 
 
 def window_d2_blocks(ob, bx, by, p=CONSTANTS, block_s=OBSERVER_BLOCK_S, context_s=OBSERVER_CONTEXT_S):

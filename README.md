@@ -63,6 +63,31 @@ ANNI warns whenever it changes the inputs (resampling, cutting, removing a delay
 and when the test signal is polarity-inverted. It also warns when the two signals correlate weakly (below 0.9), for
 example after a speech codec: the scores may then not be meaningful.
 
+## Training loss (experimental)
+
+`ANNILoss` is ANNI as a differentiable loss, for training a model to make changes that are not noticeable (a watermark
+embedder, for example). It is zero while the change is at most `target` noticeable and grows quadratically above it.
+
+```python
+from anni import ANNILoss
+
+loss_fn = ANNILoss(target=0.5, p=6, level=75.0, device="cuda")
+loss = loss_fn(reference, watermarked)    # [batch, time] tensors at 44.1 kHz, lined up sample by sample
+loss.backward()
+```
+
+| Argument | Meaning |
+|---|---|
+| `target` | how noticeable the change may be, in d′: 1 is just noticeable (about 3 in 4 correct picks), 0.5 about 64 % |
+| `p` | how the 200 ms windows are summarised: 1 is their mean, larger values move towards the most noticeable moment, `float("inf")` is the peak (`D_peak`) |
+| `level` | playback level of the reference in dB SPL (default 65). Sounds below the threshold of hearing do not count, so quiet parts of a change can be inaudible at 65 dB and audible when the listener turns the volume up. Train at the loudest level you expect listeners to use, for example 75–80 dB. |
+| `polarities` | 2 (default) runs each signal as it is and upside down, as ANNI does; 1 uses about half the memory |
+
+Unlike `ANNI`, it neither aligns nor resamples the signals. The backward pass needs about 175 MB per 1 s example.
+It suits models whose changes stay within what ANNI hears: between 80 Hz and 16 kHz (e.g. an embedder working in
+100–12000 Hz), in the sound's energy over time and frequency rather than in its phase, and in fluctuations up to
+about 180 per second.
+
 ## How it works
 
 1. A filter models the outer and middle ear.
