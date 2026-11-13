@@ -99,8 +99,9 @@ def test_input_checks(ref):
         ANNILoss(polarities=3)
 
 
-def test_a_silent_reference_is_rejected(ref):
-    x = torch.stack([ref, torch.zeros_like(ref)])
+@pytest.mark.parametrize("value", [0.0, 0.3, 0.1, 0.7, 0.001])
+def test_a_silent_or_constant_reference_is_rejected(ref, value):
+    x = torch.stack([ref, torch.full_like(ref, value)])
     with pytest.raises(ValueError, match=r"silent.*\[1\]"):
         ANNILoss()(x, x + 0.001)
 
@@ -126,3 +127,19 @@ def test_to_moves_the_nerve_model():
     loss_fn = ANNILoss().to("meta")
     assert loss_fn._nerve.g.device.type == "meta" and loss_fn._nerve.device.type == "meta"
     assert loss_fn._observer.mask.device.type == "meta"
+
+
+def test_half_precision_conversion_keeps_working(ref):
+    """.half() (or bfloat16) on the loss, or on a model containing it, leaves the nerve model in 32-bit."""
+    y = noisy(ref, 0.003)
+    with torch.no_grad():
+        full = float(ANNILoss().soft_score(ref, y)[0])
+        for conv in (lambda m: m.half(), lambda m: m.to(torch.bfloat16)):
+            loss_fn = conv(ANNILoss())
+            assert loss_fn._nerve.g.dtype == torch.float32
+            assert float(loss_fn.soft_score(ref.half(), y.half())[0]) == pytest.approx(full, rel=0.05)
+
+
+def test_signals_on_another_device_are_an_error(ref):
+    with pytest.raises(ValueError, match="device"):
+        ANNILoss()(torch.zeros(len(ref), device="meta"), torch.zeros(len(ref), device="meta"))

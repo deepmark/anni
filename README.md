@@ -82,7 +82,12 @@ loss.backward()
 | `level` | playback level of the reference in dB SPL (default 65). Sounds below the threshold of hearing do not count, so quiet parts of a change can be inaudible at 65 dB and audible when the listener turns the volume up. Train at the loudest level you expect listeners to use, for example 75–80 dB. |
 | `polarities` | 2 (default) runs each signal as it is and upside down, as ANNI does; 1 uses about half the memory |
 
-Unlike `ANNI`, it neither aligns nor resamples the signals. The backward pass needs about 175 MB per 1 s example.
+With a finite `p`, the score is a soft maximum that stays below `D_peak` for short changes: with `p=6`, a 10 ms
+click reaches about 1.6 times the target at its peak on 1.5 s clips and about twice the target on 10 s clips. Check
+`D_peak` with `ANNI` on held-out clips, or use a lower target or a larger `p`.
+
+Unlike `ANNI`, it neither aligns nor resamples the signals, and the signals must be on the loss's device. The
+backward pass needs about 175 MB per 1 s example.
 It suits models whose changes stay within what ANNI hears: between 80 Hz and 16 kHz (e.g. an embedder working in
 100–12000 Hz), in the sound's energy over time and frequency rather than in its phase, and in fluctuations up to
 about 180 per second.

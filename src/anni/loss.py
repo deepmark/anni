@@ -29,7 +29,7 @@ class ANNILoss(torch.nn.Module):
             listening: parts of the change that are below the threshold of hearing at 65 dB become audible louder.
         polarities: 2 (default) runs each signal as it is and upside down and averages, exactly as ANNI does; 1
             runs it as it is, with about half the memory.
-        device: "cpu" or "cuda" (.to() and .cuda() work too).
+        device: "cpu" or "cuda" (.to() and .cuda() work too). The signals must be on the same device.
 
     Example:
         >>> loss_fn = ANNILoss(target=0.5, p=6)
@@ -50,12 +50,13 @@ class ANNILoss(torch.nn.Module):
         self._observer = _core.Observer(self._nerve.cfs)
 
     def _apply(self, fn, *args, **kwargs):
-        """Lets .to(), .cuda() and .cpu() move the nerve model's tensors too (they are not registered buffers)."""
+        """Lets .to(), .cuda() and .cpu() move the nerve model to another device (its tensors are not registered
+        buffers). Only the device follows: the model stays in 32-bit even after .half() or a bfloat16 conversion."""
         super()._apply(fn, *args, **kwargs)
         nv, ob = self._nerve, self._observer
-        nv.g, nv.lp, nv.cfs, nv.delays = fn(nv.g), fn(nv.lp), fn(nv.cfs), fn(nv.delays)
-        nv.device, nv._spectra = nv.g.device, None
-        ob.mask = fn(ob.mask)
+        dev = fn(nv.g).device
+        nv.g, nv.lp, ob.mask = nv.g.to(dev), nv.lp.to(dev), ob.mask.to(dev)
+        nv.device, nv._spectra = dev, None
         return self
 
     def forward(self, reference, test, sr=_core.SR):
@@ -77,10 +78,11 @@ class ANNILoss(torch.nn.Module):
 
     def _window_d2(self, reference, test, sr):
         x, y = self._check(reference, test, sr)
+        with torch.no_grad():
+            silent = (x.amax(-1) == x.amin(-1)).nonzero().flatten().tolist()   # silent or constant, as ANNI checks
         x = x - x.mean(-1, keepdim=True)                               # each signal's DC offset removed, as in ANNI
         y = y - y.mean(-1, keepdim=True)
         with torch.no_grad():                                          # the reference needs no gradient
-            silent = (x == 0).all(-1).nonzero().flatten().tolist()
             if silent:
                 raise ValueError(f"reference is silent (or constant) in batch example(s) {silent}: its playback "
                                  "level cannot be set; leave such examples out of the batch")
@@ -114,5 +116,14 @@ class ANNILoss(torch.nn.Module):
             raise ValueError(f"signals must be [time] or [batch, time]; got {tuple(x.shape)}")
         if x.shape[-1] < 0.5 * _core.SR:
             raise ValueError("signals must be at least 0.5 s long")
-        dev, dt = self._nerve.device, self._nerve.g.dtype
-        return x.to(device=dev, dtype=dt), y.to(device=dev, dtype=dt)
+        dev = self._nerve.device
+        for s in (reference, test):
+            if isinstance(s, torch.Tensor) and not _same_device(s.device, dev):
+                raise ValueError(f"the signals are on {s.device} but ANNILoss runs on {dev}: create it with "
+                                 f"device={str(s.device)!r} or move it with .to()")
+        return x.to(device=dev, dtype=_core.DT), y.to(device=dev, dtype=_core.DT)
+
+
+def _same_device(a, b):
+    """Whether two devices are the same ("cuda" matches "cuda:0")."""
+    return a.type == b.type and (a.index is None or b.index is None or a.index == b.index)

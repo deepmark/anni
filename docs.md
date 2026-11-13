@@ -35,7 +35,7 @@ so swapping the two arguments can change the scores slightly.
 | `window_scores(reference, test)` | d′ of every 200 ms window that ANNI counts, for inspection. |
 | `_window_d2` | As in ANNI: each signal's DC offset removed, a silent reference rejected, one playback gain per example from the reference; then the nerve model on both signals (the reference without gradients), the observers, and the windows ANNI counts. No alignment and no resampling: gradients cannot pass through choosing a delay. |
 | `_rates` | `ear_filter` → `Nerve.forward` (one or both polarities) → `compensate` → 1.9 ms bins, for a whole batch. |
-| `_apply` | Lets `.to()`, `.cuda()` and `.cpu()` move the nerve model's tensors too. |
+| `_apply` | Lets `.to()`, `.cuda()` and `.cpu()` move the nerve model to another device. Only the device follows: the model stays in 32-bit after `.half()` or a bfloat16 conversion. Signals on another device than the loss are an error, not a silent copy. |
 
 **Why `level` matters.** Sounds below the threshold of hearing do not count. At 65 dB, quiet parts of a change (in
 pauses, or at frequencies where hearing is weak) can stay below it; played louder, they become audible. A model trained
