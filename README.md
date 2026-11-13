@@ -83,11 +83,26 @@ For a comparison with PESQ and ViSQOL on controlled changes, with audio, see
 
 ## Evaluation
 
-On [ODAQ](https://zenodo.org/records/10405774), an open dataset of music, film sound and speech over music rated by 26
-listeners (210 versions of 30 excerpts; Torcoli et al. 2024), `D_med` orders the versions like the listeners with a
-Spearman correlation of 0.85 (95 % interval 0.79–0.89). That is on par with Zimtohrli (0.83) and above ViSQOL (0.65 in
-audio mode) and PESQ (0.42). On degraded speech, in the TCD-VoIP dataset (Harte et al. 2015; packet loss, clipping,
-echo, competing speakers and noise, rated by 24 listeners), PESQ and ViSQOL follow listeners better.
+ANNI is part of the official [ODAQ benchmark](https://fraunhofer-iis.github.io/ODAQ/) by Fraunhofer IIS, built on the
+ODAQ dataset (Torcoli et al. 2024). It compares 38 quality measures with listener ratings from four listening tests:
+coding artefacts in music and film sound, stereo coding, speech from neural codecs, and spatial distortions. In the
+benchmark's overview (all four tests, averaged per test, without anchors), `D_med` orders the versions most like the
+listeners of all 38 measures, by both rank correlations (Spearman and Kendall):
+
+| Measure | Spearman | Kendall |
+|---|---|---|
+| **ANNI `D_med`** | **0.910** (1st) | **0.927** (1st) |
+| SCOREQ (reference mode) | 0.851 (2nd) | 0.884 (2nd) |
+| 2f-model | 0.840 (3rd) | 0.881 (3rd) |
+| ANNI `D_peak` | 0.834 (4th) | 0.867 (5th) |
+| PESQ (c2) | 0.812 (10th) | 0.845 (10th) |
+| Zimtohrli | 0.801 (11th) | 0.836 (11th) |
+| ViSQOL v3 (audio) | 0.657 (23rd) | 0.701 (23rd) |
+
+Per listening test, `D_med` ranks 1st on coding artefacts in music and film sound and on stereo coding, 2nd on spatial
+distortions, and 20th on speech from neural codecs, where the decoded speech no longer follows the original moment by
+moment. On degraded phone-call speech, in the TCD-VoIP dataset (Harte et al. 2015; packet loss, clipping, echo,
+competing speakers and noise, rated by 24 listeners), PESQ and ViSQOL follow listeners better.
 
 ## Limitations
 
@@ -128,7 +143,7 @@ Calibration references:
   modulation detection as a function of modulation frequency and stimulus duration: comparisons between macaques and
   humans. *Hearing Research*, 277, 37–43. [doi:10.1016/j.heares.2011.03.014](https://doi.org/10.1016/j.heares.2011.03.014)
 
-## Dedication
+## About the name
 
 ANNI stands for Auditory Nerve Noticeability Index, but the name also carries a personal dedication.
 Our wives, Ana Kovačević and Ana Boljević, share the same name. We wanted to dedicate something DeepMark built
