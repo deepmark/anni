@@ -101,8 +101,7 @@ listeners of all 38 measures, by both rank correlations (Spearman and Kendall):
 
 Per listening test, `D_med` ranks 1st on coding artefacts in music and film sound and on stereo coding, 2nd on spatial
 distortions, and 20th on speech from neural codecs, where the decoded speech no longer follows the original moment by
-moment. On degraded phone-call speech, in the TCD-VoIP dataset (Harte et al. 2015; packet loss, clipping, echo,
-competing speakers and noise, rated by 24 listeners), PESQ and ViSQOL follow listeners better.
+moment.
 
 ## Limitations
 
@@ -127,8 +126,6 @@ Listening-test data:
 
 - Torcoli, M., Wu, C.-W., Dick, S., Williams, P. A., Halimeh, M. M., Wolcott, W., & Habets, E. A. P. (2024). ODAQ: Open
   Dataset of Audio Quality. *Proc. IEEE ICASSP*. [arXiv:2401.00197](https://arxiv.org/abs/2401.00197)
-- Harte, N., Gillen, E., & Hines, A. (2015). TCD-VoIP, a research database of degraded speech for assessing quality in
-  VoIP applications. *Proc. QoMEX*.
 
 Calibration references:
 
