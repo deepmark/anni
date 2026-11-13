@@ -14,7 +14,8 @@ class ANNILoss(torch.nn.Module):
     200 ms windows), with two differences that gradients need:
 
     - No alignment: the two signals must already line up sample by sample (as a watermarked signal and its
-      original do). No resampling either: the signals must be at 44.1 kHz.
+      original do). No resampling either: the signals must be at 44.1 kHz. As in ANNI, each signal's DC offset is
+      removed and a silent reference is rejected (its playback level cannot be set).
     - The peak and median over the windows are replaced by one smooth summary, the p-mean of the window scores
       (mean of d'^p, to the power 1/p). p=1 is the plain mean (the typical moment), larger p moves it towards the
       most noticeable moment, and p=inf is the peak itself. With many windows a finite p stays below the peak, so
@@ -28,7 +29,7 @@ class ANNILoss(torch.nn.Module):
             listening: parts of the change that are below the threshold of hearing at 65 dB become audible louder.
         polarities: 2 (default) runs each signal as it is and upside down and averages, exactly as ANNI does; 1
             runs it as it is, with about half the memory.
-        device: "cpu" or "cuda".
+        device: "cpu" or "cuda" (.to() and .cuda() work too).
 
     Example:
         >>> loss_fn = ANNILoss(target=0.5, p=6)
@@ -48,6 +49,15 @@ class ANNILoss(torch.nn.Module):
         self._nerve = _core.Nerve(device=device)
         self._observer = _core.Observer(self._nerve.cfs)
 
+    def _apply(self, fn, *args, **kwargs):
+        """Lets .to(), .cuda() and .cpu() move the nerve model's tensors too (they are not registered buffers)."""
+        super()._apply(fn, *args, **kwargs)
+        nv, ob = self._nerve, self._observer
+        nv.g, nv.lp, nv.cfs, nv.delays = fn(nv.g), fn(nv.lp), fn(nv.cfs), fn(nv.delays)
+        nv.device, nv._spectra = nv.g.device, None
+        ob.mask = fn(ob.mask)
+        return self
+
     def forward(self, reference, test, sr=_core.SR):
         """Mean over the batch of relu(score - target)^2, score being soft_score(reference, test)."""
         return (torch.relu(self.soft_score(reference, test, sr) - self.target) ** 2).mean()
@@ -55,9 +65,11 @@ class ANNILoss(torch.nn.Module):
     def soft_score(self, reference, test, sr=_core.SR):
         """The p-mean of the window scores (in d'), per example: [batch]. Differentiable with respect to test."""
         d2 = self._window_d2(reference, test, sr).clamp_min(0) + 1e-12
+        m = d2.amax(-1, keepdim=True)
         if math.isinf(self.p):
-            return torch.sqrt(d2.max(-1).values)
-        return d2.pow(self.p / 2).mean(-1).pow(1 / self.p)
+            return torch.sqrt(m[..., 0])
+        m = m.detach()                    # scaling by the largest window keeps large p finite (same value and gradient)
+        return torch.sqrt(m[..., 0]) * (d2 / m).pow(self.p / 2).mean(-1).pow(1 / self.p)
 
     def window_scores(self, reference, test, sr=_core.SR):
         """d' of every 200 ms window that ANNI counts, per example: [batch, windows]. For inspection."""
@@ -65,7 +77,13 @@ class ANNILoss(torch.nn.Module):
 
     def _window_d2(self, reference, test, sr):
         x, y = self._check(reference, test, sr)
+        x = x - x.mean(-1, keepdim=True)                               # each signal's DC offset removed, as in ANNI
+        y = y - y.mean(-1, keepdim=True)
         with torch.no_grad():                                          # the reference needs no gradient
+            silent = (x == 0).all(-1).nonzero().flatten().tolist()
+            if silent:
+                raise ValueError(f"reference is silent (or constant) in batch example(s) {silent}: its playback "
+                                 "level cannot be set; leave such examples out of the batch")
             gain = torch.stack([_core.pa_gain(r, self.level) for r in x])[:, None]
             rx = self._rates(gain * x)
         ry = self._rates(gain * y)                                     # one gain for both, set by the reference
@@ -96,5 +114,5 @@ class ANNILoss(torch.nn.Module):
             raise ValueError(f"signals must be [time] or [batch, time]; got {tuple(x.shape)}")
         if x.shape[-1] < 0.5 * _core.SR:
             raise ValueError("signals must be at least 0.5 s long")
-        dev = self._nerve.device
-        return x.to(device=dev, dtype=_core.DT), y.to(device=dev, dtype=_core.DT)
+        dev, dt = self._nerve.device, self._nerve.g.dtype
+        return x.to(device=dev, dtype=dt), y.to(device=dev, dtype=dt)

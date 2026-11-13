@@ -97,3 +97,32 @@ def test_input_checks(ref):
         loss_fn(ref[:1000], ref[:1000])
     with pytest.raises(ValueError, match="polarities"):
         ANNILoss(polarities=3)
+
+
+def test_a_silent_reference_is_rejected(ref):
+    x = torch.stack([ref, torch.zeros_like(ref)])
+    with pytest.raises(ValueError, match=r"silent.*\[1\]"):
+        ANNILoss()(x, x + 0.001)
+
+
+def test_a_dc_offset_is_not_a_difference(ref):
+    with torch.no_grad():
+        assert float(ANNILoss().soft_score(ref, ref + 0.05)[0]) < 1e-3
+
+
+def test_large_p_stays_finite_and_approaches_the_peak(ref):
+    y = noisy(ref, 0.03).requires_grad_(True)                          # window scores well above 4
+    loss_fn = ANNILoss(target=0.0, p=64)
+    score = loss_fn.soft_score(ref, y)
+    loss = (torch.relu(score - loss_fn.target) ** 2).mean()
+    loss.backward()
+    assert torch.isfinite(loss) and torch.isfinite(y.grad).all()
+    with torch.no_grad():
+        peak = float(ANNILoss(p=float("inf")).soft_score(ref, y)[0])
+    assert 0.8 * peak < float(score[0]) <= peak * (1 + 1e-5)
+
+
+def test_to_moves_the_nerve_model():
+    loss_fn = ANNILoss().to("meta")
+    assert loss_fn._nerve.g.device.type == "meta" and loss_fn._nerve.device.type == "meta"
+    assert loss_fn._observer.mask.device.type == "meta"

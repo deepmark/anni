@@ -31,10 +31,11 @@ so swapping the two arguments can change the scores slightly.
 |---|---|
 | `ANNILoss(target=0.5, p=6.0, level=65.0, polarities=2, device="cpu")` | Builds the nerve model and the observers once. `target` is the noticeability still allowed (d′); `p` the exponent of the summary over windows; `level` the playback level of the reference in dB SPL; `polarities` 2 as ANNI or 1 for about half the memory. |
 | `forward(reference, test)` | The loss: mean over the batch of max(0, score − target)². Signals are `[batch, time]` or `[time]` at 44.1 kHz. |
-| `soft_score(reference, test)` | The score per example: the p-mean of the window d′ values, (mean of d′ᵖ)^(1/p). p = 1 is the mean, p = ∞ the peak (equal to ANNI's `D_peak` for aligned signals). With many windows a finite p stays below the peak. |
+| `soft_score(reference, test)` | The score per example: the p-mean of the window d′ values, (mean of d′ᵖ)^(1/p), computed relative to the largest window so that large p stays finite. p = 1 is the mean, p = ∞ the peak (equal to ANNI's `D_peak` for aligned signals). With many windows a finite p stays below the peak. |
 | `window_scores(reference, test)` | d′ of every 200 ms window that ANNI counts, for inspection. |
-| `_window_d2` | One playback gain per example from the reference (as in ANNI), the nerve model on both signals (the reference without gradients), the observers, and the windows ANNI counts. No alignment and no resampling: gradients cannot pass through choosing a delay. |
+| `_window_d2` | As in ANNI: each signal's DC offset removed, a silent reference rejected, one playback gain per example from the reference; then the nerve model on both signals (the reference without gradients), the observers, and the windows ANNI counts. No alignment and no resampling: gradients cannot pass through choosing a delay. |
 | `_rates` | `ear_filter` → `Nerve.forward` (one or both polarities) → `compensate` → 1.9 ms bins, for a whole batch. |
+| `_apply` | Lets `.to()`, `.cuda()` and `.cpu()` move the nerve model's tensors too. |
 
 **Why `level` matters.** Sounds below the threshold of hearing do not count. At 65 dB, quiet parts of a change (in
 pauses, or at frequencies where hearing is weak) can stay below it; played louder, they become audible. A model trained
