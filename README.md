@@ -65,8 +65,7 @@ example after a speech codec: the scores may then not be meaningful.
 
 ## Training loss (experimental)
 
-`ANNILoss` is ANNI as a differentiable loss, for training a model to make changes that are not noticeable (a watermark
-embedder, for example). It is zero while the change is at most `target` noticeable and grows quadratically above it.
+`ANNILoss` is ANNI as a differentiable loss, for training a model to make changes that are not noticeable (e.g. a watermark embedder). It is zero while the change is at most `target` noticeable and grows quadratically above it.
 
 ```python
 from anni import ANNILoss
