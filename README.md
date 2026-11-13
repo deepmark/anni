@@ -127,3 +127,12 @@ Calibration references:
 - O'Connor, K. N., Johnson, J. S., Niwa, M., Noriega, N. C., Marshall, E. A., & Sutter, M. L. (2011). Amplitude
   modulation detection as a function of modulation frequency and stimulus duration: comparisons between macaques and
   humans. *Hearing Research*, 277, 37–43. [doi:10.1016/j.heares.2011.03.014](https://doi.org/10.1016/j.heares.2011.03.014)
+
+## Dedication
+
+ANNI stands for Auditory Nerve Noticeability Index, but the name also carries a personal dedication.
+Our wives, Ana Kovačević and Ana Boljević, share the same name. We wanted to dedicate something DeepMark built
+to them. Without their support and sacrifice, there would be no DeepMark at all.
+
+By another happy coincidence, our lawyer, sister and huge supporter, Ana Pavlović, shares that name too.
+This one is for all three of them. ❤️
