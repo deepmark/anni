@@ -75,7 +75,7 @@ loss = loss_fn(reference, watermarked)    # [batch, time] tensors at 44.1 kHz, l
 loss.backward()
 ```
 
-| Argument | Meaning |
+| Parameter | Meaning |
 |---|---|
 | `target` | how noticeable the change may be, in d′: 1 is just noticeable (about 3 in 4 correct picks), 0.5 about 64 % |
 | `p` | how the 200 ms windows are summarised: 1 is their mean, larger values move towards the most noticeable moment, `float("inf")` is the peak (`D_peak`) |
