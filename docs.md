@@ -112,7 +112,7 @@ Adapted from Mark R. Saddler's [auditory_machine_learning](https://github.com/ms
 | `__init__` | Sets up 1.9 ms time bins and a 200 ms window (105 bins); seven filters (a 2.8 Hz low-pass for the pattern observer, octave band-passes at 4, 8, 16, 32, 64 and 128 Hz for the texture observer); a mask that lets each fibre use only fluctuation bands up to a quarter of its tuning frequency; and the fast bands (octave band-passes at 256, 512 and 1024 Hz on 0.27 ms sub-bins, as 50 ms impulse responses), used by the fibres tuned above 1 kHz and weighted by the 150 Hz low-pass. |
 | `bin(r)` | Averages the firing rates into 1.9 ms bins (21 samples). |
 | `split(a)` | Runs a signal through all seven filters. |
-| `fast_power(fine, skip)` | The fast band power: sub-binned rates through the three fast band-passes, squared and averaged back into the 1.9 ms bins (seven sub-bins each), after `skip` sub-bins of history. |
+| `fast_power(fine, skip)` | The fast band power: sub-binned rates through the three fast band-passes, squared and averaged back into the 1.9 ms bins (seven sub-bins each), after `skip` sub-bins of history. Averaging 3 samples per sub-bin is a weak anti-alias filter: a steady tone near 1.7 or 2.1 kHz leaves a little of its ripple in the 256 or 512 Hz band (about twice the texture floor e₀). It is the same in both signals, so it cancels unless the tone changes; a test keeps it from growing. |
 | `sub_bin_fast(r)` | `fast_power` for whole-signal rates (used by the loss): sub-bins, start-padded with the first one for the filters' history. |
 | `movmean(a)` | A 200 ms moving average. |
 | `valid(npos, nb)` | Marks the windows that count: the first 0.1 s and the last 0.05 s are skipped, while the filters settle. |
