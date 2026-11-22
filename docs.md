@@ -7,8 +7,10 @@ training loss), the computation in [`_core.py`](src/anni/_core.py), and the audi
 ```
 measure.py:          reference, test -> checks, resampling, alignment, playback level -> sound pressure (Pa)
 loss.py:             reference, test (aligned, 44.1 kHz) -> playback level -> sound pressure (Pa)
-_core.py:            ear_filter -> Nerve.binned_rates -> window_d2_blocks -> scores -> D_peak, D_med
-                     (the loss: ear_filter -> Nerve.forward -> Observer.window_d2 -> p-mean of the window scores)
+_core.py:            ear_filter -> Nerve.binned_rates (bins and fast band power) -> window_d2_blocks -> scores
+                     -> D_peak, D_med
+                     (the loss: ear_filter -> Nerve.forward -> Observer.bin and sub_bin_fast -> Observer.window_d2
+                     -> p-mean of the window scores)
 _auditory_model.py:  used by Nerve: cochlear (gammatone) filters, hair-cell low-pass, firing-rate curve
 ```
 
@@ -20,7 +22,7 @@ _auditory_model.py:  used by Nerve: cochlear (gammatone) filters, hair-cell low-
 | `ANNI.__call__(reference, test, sr)` | Scores `test` against `reference` and returns `{"D_peak": ..., "D_med": ...}`. |
 | `_check` | Converts an input to a 1-D NumPy array and rejects multichannel or non-finite input. |
 | `_prepare` | Turns the inputs into sound-pressure signals at 44.1 kHz: removes each signal's constant (DC) offset, cuts them to equal length, resamples to 44.1 kHz, removes a constant delay (`align`) and applies one playback gain to both (`pa_gain`). |
-| `_forward` | Runs the nerve model on both signals (`binned_rates`) and returns the scores (`scores`). |
+| `_forward` | Runs the nerve model on both signals (`binned_rates`, with the fast band power) and returns the scores (`scores`). |
 
 The order matters: the reference sets the playback level and the test signal is the one shifted into alignment,
 so swapping the two arguments can change the scores slightly.
@@ -34,7 +36,7 @@ so swapping the two arguments can change the scores slightly.
 | `soft_score(reference, test)` | The score per example: the p-mean of the window d′ values, (mean of d′ᵖ)^(1/p), computed relative to the largest window so that large p stays finite. p = 1 is the mean, p = ∞ the peak (equal to ANNI's `D_peak` for aligned signals). With many windows a finite p stays below the peak. |
 | `window_scores(reference, test)` | d′ of every 200 ms window that ANNI counts, for inspection. |
 | `_window_d2` | As in ANNI: each signal's DC offset removed, a silent reference rejected, one playback gain per example from the reference; then the nerve model on both signals (the reference without gradients), the observers, and the windows ANNI counts. No alignment and no resampling: gradients cannot pass through choosing a delay. |
-| `_rates` | `ear_filter` → `Nerve.forward` (one or both polarities) → `compensate` → 1.9 ms bins, for a whole batch. |
+| `_rates` | `ear_filter` → `Nerve.forward` (one or both polarities) → `compensate` → 1.9 ms bins and the fast band power (`sub_bin_fast`), for a whole batch. |
 | `_apply` | Lets `.to()`, `.cuda()` and `.cpu()` move the nerve model to another device. Only the device follows: the model stays in 32-bit after `.half()` or a bfloat16 conversion. Signals on another device than the loss are an error, not a silent copy. |
 
 **Why `level` matters.** Sounds below the threshold of hearing do not count. At 65 dB, quiet parts of a change (in
@@ -65,7 +67,9 @@ Adapted from Mark R. Saddler's [auditory_machine_learning](https://github.com/ms
 | `FS_N` | 11025 Hz, the nerve output rate |
 | `P_REF` | 20 µPa, the pressure at 0 dB SPL |
 | `DT` | 32-bit floating point |
-| `CONSTANTS` | the four calibrated constants: r₀ (internal-noise floor, 66.6 spikes/s), k_P (pattern gain), k_S (texture gain) and e₀ (a small floor in the texture comparison) |
+| `CONSTANTS` | the five calibrated constants: r₀ (internal-noise floor, about 60 spikes/s), k_P (pattern gain), k_S (texture gain), e₀ (a small floor in the texture comparison) and k_F (gain of the fast fluctuation bands) |
+| `FAST_BANDS`, `FAST_CUTOFF` | the fast fluctuation bands (octaves at 256, 512 and 1024 Hz) and the 150 Hz first-order low-pass that weights them (Kohlrausch, Fassel & Dau 2000: hearing follows fast amplitude changes less and less above about 150 Hz) |
+| `FINE_N`, `FAST_HISTORY_S` | the sub-bins the fast bands are measured on (3 nerve samples, 0.27 ms) and the history their filters need (50 ms) |
 
 ### Helpers
 
@@ -92,7 +96,7 @@ Adapted from Mark R. Saddler's [auditory_machine_learning](https://github.com/ms
 | `forward(x)` | The model, for each signal: cochlear filters → keep the positive half-waves (the hair cell responds to movement in one direction) → hair-cell low-pass, keeping every 4th sample (44.1 → 11.025 kHz) → positive half-waves → firing-rate curve. Output: firing rate in spikes/s for 128 fibres over time. |
 | `compensate(r)` | Shifts each fibre earlier by its own delay, so that all fibres line up in time. |
 | `rates(p)` | The full front end: `ear_filter` → `forward` on the signal and on its upside-down copy, averaged (polarity averaging, so the comparison concerns firing rates rather than the exact waveform phase) → `compensate`. Whole signal at once. |
-| `binned_rates(p, bin_n)` | The same as `rates`, already averaged into 1.9 ms bins, but computed in blocks of 2 s so that memory does not grow with the length of the signal. The result is the same as for the whole signal (up to rounding): each output sample depends only on the last 0.1 s of input (two 50 ms filters), so every block gets that much input before it, and the largest fibre delay after it. |
+| `binned_rates(p, bin_n, fast=None)` | The same as `rates`, already averaged into 1.9 ms bins, but computed in blocks of 2 s so that memory does not grow with the length of the signal. The result is the same as for the whole signal (up to rounding): each output sample depends only on the last 0.1 s of input (two 50 ms filters), so every block gets that much input before it, and the largest fibre delay after it. With `fast` (the observer), it also returns the fast band power per bin (`fast_power`), from the same blocks; each block's sub-bins get the fast filters' 50 ms of history before them. |
 
 ### Filter design for the observers
 
@@ -105,16 +109,18 @@ Adapted from Mark R. Saddler's [auditory_machine_learning](https://github.com/ms
 
 | Method | What it does |
 |---|---|
-| `__init__` | Sets up 1.9 ms time bins and a 200 ms window (105 bins); seven filters (a 2.8 Hz low-pass for the pattern observer, octave band-passes at 4, 8, 16, 32, 64 and 128 Hz for the texture observer); and a mask that lets each fibre use only fluctuation bands up to a quarter of its tuning frequency. |
+| `__init__` | Sets up 1.9 ms time bins and a 200 ms window (105 bins); seven filters (a 2.8 Hz low-pass for the pattern observer, octave band-passes at 4, 8, 16, 32, 64 and 128 Hz for the texture observer); a mask that lets each fibre use only fluctuation bands up to a quarter of its tuning frequency; and the fast bands (octave band-passes at 256, 512 and 1024 Hz on 0.27 ms sub-bins, as 50 ms impulse responses), used by the fibres tuned above 1 kHz and weighted by the 150 Hz low-pass. |
 | `bin(r)` | Averages the firing rates into 1.9 ms bins (21 samples). |
 | `split(a)` | Runs a signal through all seven filters. |
+| `fast_power(fine, skip)` | The fast band power: sub-binned rates through the three fast band-passes, squared and averaged back into the 1.9 ms bins (seven sub-bins each), after `skip` sub-bins of history. Averaging 3 samples per sub-bin is a weak anti-alias filter: a steady tone near 1.7 or 2.1 kHz leaves a little of its ripple in the 256 or 512 Hz band (about twice the texture floor e₀). It is the same in both signals, so it cancels unless the tone changes; a test keeps it from growing. |
+| `sub_bin_fast(r)` | `fast_power` for whole-signal rates (used by the loss): sub-bins, start-padded with the first one for the filters' history. |
 | `movmean(a)` | A 200 ms moving average. |
 | `valid(npos, nb)` | Marks the windows that count: the first 0.1 s and the last 0.05 s are skipped, while the filters settle. |
-| `window_d2(Rx, Ry, p)` | The comparison. For every 200 ms window it adds up the evidence (in d′² units) from two observers, summed over fibres and weighted by the spacing between fibres. **Pattern:** (slow change in firing rate)² ÷ (average firing rate + r₀). A busier fibre fires more irregularly, so the same change counts less; this is how masking enters. **Texture:** (logarithm of the ratio of fluctuation strength between the two signals)², i.e. a change in roughness or flutter. |
+| `window_d2(Rx, Ry, p, Fx, Fy)` | The comparison. For every 200 ms window it adds up the evidence (in d′² units) from two observers, summed over fibres and weighted by the spacing between fibres. **Pattern:** (slow change in firing rate)² ÷ (average firing rate + r₀). A busier fibre fires more irregularly, so the same change counts less; this is how masking enters. **Texture:** (logarithm of the ratio of fluctuation strength between the two signals)², i.e. a change in roughness or flutter; the fast bands are compared the same way, with their own gain k_F. |
 
 ### The result
 
 | Function | What it does |
 |---|---|
-| `window_d2_blocks(ob, bx, by)` | `window_d2` over binned rates, in blocks of 10 s of windows, each starting 2 s early so that the observers' slow filters have settled. What is left of the earlier history is below 1e-7, so the scores do not change. |
-| `scores(ob, bx, by)` | D for each window is the square root of its total evidence. `D_peak` is the largest D over the windows, `D_med` the median. |
+| `window_d2_blocks(ob, bx, by, fx, fy)` | `window_d2` over binned rates (and fast band power), in blocks of 10 s of windows, each starting 2 s early so that the observers' slow filters have settled. What is left of the earlier history is below 1e-7, so the scores do not change. |
+| `scores(ob, bx, by, fx, fy)` | D for each window is the square root of its total evidence. `D_peak` is the largest D over the windows, `D_med` the median. |

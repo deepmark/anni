@@ -57,7 +57,7 @@ scores can be expressed in dB as 20·log₁₀(D_B / D_A).
 - **Timing:** a constant delay of up to ±10 ms is removed. If the lengths differ, the longer signal is cut.
 - **Length:** at least 0.5 s; typical test clips are about 10 s long, as for PESQ and ViSQOL. A 5 s pair takes about
   1 s and 0.9 GB on a laptop CPU. Long files are processed in blocks, so memory grows only slowly with length
-  (2 min: about 20 s and 1.2 GB). On an NVIDIA GPU, use `ANNI(device="cuda")`.
+  (2 min: about 25 s and 1.2 GB). On an NVIDIA GPU, use `ANNI(device="cuda")`.
 
 ANNI warns whenever it changes the inputs (resampling, cutting, removing a delay or a constant offset between them)
 and when the test signal is polarity-inverted. It also warns when the two signals correlate weakly (below 0.9), for
@@ -86,10 +86,10 @@ With a finite `p`, the score stays below `D_peak` for short changes, the more so
 `D_peak` with `ANNI` on held-out clips.
 
 Unlike `ANNI`, it neither aligns nor resamples the signals, and the signals must be on the loss's device. The
-backward pass needs about 175 MB per 1 s example.
+backward pass needs about 190 MB per 1 s example.
 It suits models whose changes stay within what ANNI hears: between 80 Hz and 16 kHz (e.g. an embedder working in
 100–12000 Hz), in the sound's energy over time and frequency rather than in its phase, and in fluctuations up to
-about 180 per second.
+about 1400 per second.
 
 ## How it works
 
@@ -98,12 +98,14 @@ about 180 per second.
    cochlear (gammatone) filters, inner-hair-cell rectification and smoothing, and a sigmoid firing-rate curve.
 3. Two observers compare the firing rates. Each change is weighed against the natural randomness of nerve firing,
    which is what makes loud sounds mask quieter ones. One observer looks at slow changes in firing rate (level and
-   colouration), the other at changes in how the rate fluctuates (roughness, flutter).
+   colouration), the other at changes in how the rate fluctuates, from slow flutter to fast, buzz-like fluctuations
+   at voice-pitch rates.
 4. The evidence is added up over fibres and over 200 ms windows. `D_peak` is the largest window, `D_med` the median.
 
-Four constants set the scale so that classic laboratory thresholds score about D = 1: the threshold of hearing and
+Five constants set the scale so that classic laboratory thresholds score about D = 1: the threshold of hearing and
 the 1 dB level difference at 1 kHz (following Taal et al. 2012), noise and tone masking (ITU-R BS.1387), and
-amplitude-modulation detection on tones (He et al. 2008) and on noise (O'Connor et al. 2011).
+amplitude-modulation detection on tones (He et al. 2008), including fast modulation (Kohlrausch et al. 2000;
+Moore & Glasberg 2001), and on noise (O'Connor et al. 2011). As in hearing, the fastest fluctuations count less.
 
 A function-by-function walk-through of the code is in [docs.md](https://github.com/deepmark/anni/blob/main/docs.md).
 For a comparison with PESQ and ViSQOL on controlled changes, with audio, see
@@ -135,7 +137,8 @@ moment.
 
 - It compares the signals moment by moment, so it does not suit audio whose timing or pitch has changed
   (time-stretching, pitch-shifting) or that went through a speech codec.
-- It doesn't see energy above 16 kHz or below 80 Hz, very fast fluctuations or fine timing structure.
+- It doesn't see energy above 16 kHz or below 80 Hz, fluctuations faster than about 1400 per second, or fine timing
+  structure.
 - Mono only, normal hearing.
 
 ## Credits and licence
@@ -164,6 +167,12 @@ Calibration references:
 - He, N., Mills, J. H., Ahlstrom, J. B., & Dubno, J. R. (2008). Age-related differences in the temporal modulation
   transfer function with pure-tone carriers. *The Journal of the Acoustical Society of America*, 124(6), 3841–3849.
   [doi:10.1121/1.2998779](https://doi.org/10.1121/1.2998779)
+- Kohlrausch, A., Fassel, R., & Dau, T. (2000). The influence of carrier level and frequency on modulation and
+  beat-detection thresholds for sinusoidal carriers. *The Journal of the Acoustical Society of America*, 108(2),
+  723–734. [doi:10.1121/1.429605](https://doi.org/10.1121/1.429605)
+- Moore, B. C. J., & Glasberg, B. R. (2001). Temporal modulation transfer functions obtained using sinusoidal carriers
+  with normally hearing and hearing-impaired listeners. *The Journal of the Acoustical Society of America*, 110(2),
+  1067–1073. [doi:10.1121/1.1385177](https://doi.org/10.1121/1.1385177)
 - O'Connor, K. N., Johnson, J. S., Niwa, M., Noriega, N. C., Marshall, E. A., & Sutter, M. L. (2011). Amplitude
   modulation detection as a function of modulation frequency and stimulus duration: comparisons between macaques and
   humans. *Hearing Research*, 277, 37–43. [doi:10.1016/j.heares.2011.03.014](https://doi.org/10.1016/j.heares.2011.03.014)

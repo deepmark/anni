@@ -1,8 +1,8 @@
 """ANNI's computation, in PyTorch.
 
 Steps: presentation level (one gain for both signals) -> alignment (constant delay) -> outer/middle-ear filter ->
-auditory-nerve model (polarity-averaged, delay-compensated) -> 1.9 ms bins -> pattern and texture observers ->
-200 ms windows -> D_peak, D_med.
+auditory-nerve model (polarity-averaged, delay-compensated) -> 1.9 ms bins (plus the power of fast fluctuations,
+256-1024 Hz, measured on 0.27 ms sub-bins) -> pattern and texture observers -> 200 ms windows -> D_peak, D_med.
 """
 import cmath
 import math
@@ -20,8 +20,17 @@ DT = torch.float32
 NERVE_BLOCK_S = 2.0            # nerve model: seconds per block
 OBSERVER_BLOCK_S = 10.0        # observers: seconds of 200 ms window positions per block
 OBSERVER_CONTEXT_S = 2.0       # observers: history before each block, for their slow filters to settle
-# calibration constants: internal-noise floor r0 (spikes/s), pattern gain kP, texture gain kS, texture floor e0
-CONSTANTS = dict(r0=66.56840796512564, kP=7.440094426024921, kS=0.05248517778798395, e0=2.3703160271327422e-05)
+# calibration constants: internal-noise floor r0 (spikes/s), pattern gain kP, texture gain kS, texture floor e0,
+# fast-fluctuation gain kF
+CONSTANTS = dict(r0=60.250680087717825, kP=6.882786932864671, kS=0.04863147509425055, e0=2.6535338234460336e-05,
+                 kF=0.03465053496767872)
+# fast fluctuations: octave bands above the texture observer's, on sub-bins of 3 nerve samples (0.27 ms), weighted by
+# a first-order low-pass at 150 Hz, the limit on following fast amplitude changes that Kohlrausch, Fassel & Dau (2000)
+# place after the cochlea
+FAST_BANDS = (256., 512., 1024.)
+FAST_CUTOFF = 150.0            # Hz
+FINE_N = 3                     # nerve samples per sub-bin
+FAST_HISTORY_S = 0.05          # history the fast band filters need (their impulse responses are below 1e-9 after it)
 
 
 def next_fast_len(n):
@@ -170,12 +179,16 @@ class Nerve:
         r = 0.5 * (r[:len(x)] + r[len(x):])
         return self.compensate(r).cpu()
 
-    def binned_rates(self, p, bin_n, block_s=NERVE_BLOCK_S):
+    def binned_rates(self, p, bin_n, block_s=NERVE_BLOCK_S, fast=None):
         """p [T] pressure (Pa) at 44.1 kHz -> ear filter -> polarity-averaged, delay-compensated rates averaged in
         bins of bin_n output samples, [128, nb], on the CPU. The same as binning rates(p), but computed in blocks of
         about block_s seconds, so memory does not grow with the length of p. This is exact: an output sample depends
         only on the last len(g) + len(lp) input samples (two FIR filters; the rest is sample by sample), so each block
-        gets that much input before it, and the largest fibre delay after it."""
+        gets that much input before it, and the largest fibre delay after it.
+
+        With fast (an Observer), also returns the power of the fast fluctuation bands per bin, [K, F, nb], for the F
+        fibres that use them (Observer.fast_power), computed in the same blocks: each block's sub-bins get the fast
+        filters' history before them, so the result equals Observer.sub_bin_fast on the whole signal."""
         x = ear_filter(p.to(device=self.device, dtype=DT))
         T = x.shape[-1]
         st = self.stride
@@ -185,19 +198,34 @@ class Nerve:
         right = st * (int(self.delays.max()) + 1)                     # input after the block, for the delay shift
         per_block = max(1, int(round(block_s * FS_N / bin_n)))       # bins per block
         delays = self.delays.to(self.device)
-        out = []
+        hist = fast.fast_hist * fast.fine_n if fast is not None else 0     # output samples of fast-filter history
+        out, out_fast = [], []
         for k0 in range(0, nb, per_block):
             k1 = min(nb, k0 + per_block)
             o0, o1 = k0 * bin_n, k1 * bin_n                            # output samples of this block
-            a, b = max(0, st * o0 - left), min(T, st * o1 + right)     # input samples it needs
+            oh = max(0, o0 - hist)                                     # ... and of the history before it
+            a, b = max(0, st * oh - left), min(T, st * o1 + right)     # input samples it needs
             seg = x[a:b]
             r = self.forward(torch.stack([seg, -seg]))
             r = 0.5 * (r[0] + r[1])                                    # [128, ceil((b - a) / stride)]
-            idx = torch.arange(o0, o1, device=self.device)[None, :] + delays[:, None] - a // st
+            idx = torch.arange(oh, o1, device=self.device)[None, :] + delays[:, None] - a // st
             inside = idx < r.shape[-1]                                 # past the end of the signal: zero, as in compensate
             rc = torch.gather(r, 1, idx.clamp(max=r.shape[-1] - 1)) * inside
-            out.append(rc.reshape(rc.shape[0], k1 - k0, bin_n).mean(-1).cpu())
-        return torch.cat(out, -1) if out else torch.zeros(len(self.cfs), 0, dtype=DT)
+            out.append(rc[:, o0 - oh:].reshape(rc.shape[0], k1 - k0, bin_n).mean(-1).cpu())
+            if fast is not None:
+                rf = rc[fast.fast_fibres]
+                fine = rf.reshape(rf.shape[0], -1, fast.fine_n).mean(-1)
+                skip = (o0 - oh) // fast.fine_n
+                if skip < fast.fast_hist:                              # the signal's start: pad with the first sub-bin
+                    fine = torch.cat([fine[:, :1].expand(-1, fast.fast_hist - skip), fine], -1)
+                    skip = fast.fast_hist
+                out_fast.append(fast.fast_power(fine, skip).cpu())
+        binned = torch.cat(out, -1) if out else torch.zeros(len(self.cfs), 0, dtype=DT)
+        if fast is None:
+            return binned
+        fp = (torch.cat(out_fast, -1) if out_fast
+              else torch.zeros(len(FAST_BANDS), len(self.cfs[fast.fast_fibres]), 0, dtype=DT))
+        return binned, fp
 
 
 # ------------------------------------------------------------------------------------------------ observers
@@ -256,7 +284,8 @@ def _impulse(sec, n):
 
 class Observer:
     """Compares two neurograms: the pattern observer (rate changes slower than ~3 Hz) and the texture observer
-    (changes in rate fluctuation, octave bands 4-128 Hz), evidence in d'^2 units pooled over fibres and 200 ms."""
+    (changes in rate fluctuation, octave bands 4-128 Hz, and fast bands 256-1024 Hz from sub-bins), evidence in d'^2
+    units pooled over fibres and 200 ms."""
 
     def __init__(self, cfs, bin_n=21, bands=(4., 8., 16., 32., 64., 128.), win_s=0.1995, pad_s=1.0,
                  trim_s=(0.1, 0.05)):
@@ -272,6 +301,19 @@ class Observer:
         self.dz = float(torch.diff(torch.as_tensor(_auditory_model.freq2erb(cfs.numpy()))).mean())  # fibre spacing
         self.mask = (fk[:, None] <= cfs[None, :] / 4.0).to(DT)      # a band counts only up to CF / 4
         self.trim_s = trim_s
+        # fast fluctuations: band-passed on sub-bins of FINE_N nerve samples; their power is averaged back into the bins
+        if bin_n % FINE_N:
+            raise ValueError(f"bin_n must be a multiple of {FINE_N}")
+        self.fine_n, self.ratio = FINE_N, bin_n // FINE_N
+        fsf = FS_N / FINE_N
+        self.fast_hist = int(round(FAST_HISTORY_S * fsf))            # sub-bins of history the band filters need
+        fast_secs = [butter2("bandpass", (fc / math.sqrt(2), fc * math.sqrt(2)), fsf) for fc in FAST_BANDS]
+        self.fast_h = torch.tensor([_impulse(tuple(b) + tuple(a), self.fast_hist) for b, a in fast_secs], dtype=DT)
+        ff = torch.tensor(FAST_BANDS, dtype=DT)
+        f0 = int(torch.nonzero(cfs >= 4.0 * FAST_BANDS[0])[0])       # fibres below this use no fast band (CF / 4)
+        self.fast_fibres = slice(f0, None)
+        self.fast_mask = ((ff[:, None] <= cfs[None, f0:] / 4.0).to(DT)                 # the CF / 4 rule, as above
+                          / (1.0 + (ff[:, None] / FAST_CUTOFF) ** 2))                  # and the 150 Hz low-pass
 
     def bin(self, r):
         nb = r.shape[-1] // self.bin_n
@@ -289,6 +331,27 @@ class Observer:
             out.append(torch.fft.irfft(A * torch.fft.rfft(h, n), n)[..., :L][..., self.padc:])
         return torch.stack(out)
 
+    def fast_power(self, fine, skip):
+        """Sub-binned rates [..., F, n] of the fibres that use the fast bands (fast_fibres), the first `skip` sub-bins
+        being history, -> power of each fast band (causal band-pass, then squared), averaged into the bins that follow
+        the history: [K, ..., F, (n - skip) // ratio]."""
+        n = fine.shape[-1]
+        L = next_fast_len(n + self.fast_hist)
+        h = torch.fft.rfft(self.fast_h.to(fine.device, fine.dtype), L)
+        h = h.reshape(h.shape[0], *[1] * (fine.dim() - 1), h.shape[-1])
+        band = torch.fft.irfft(torch.fft.rfft(fine, L)[None] * h, L)[..., skip:n]
+        m = band.shape[-1] // self.ratio
+        return (band[..., :m * self.ratio] ** 2).reshape(*band.shape[:-1], m, self.ratio).mean(-1)
+
+    def sub_bin_fast(self, r):
+        """Fast band power [K, ..., F, nb] for whole-signal rates r [..., 128, N] (as bin(r) gives the bins):
+        sub-bins of the fibres that use the fast bands, start-padded with the first one for the filters' history."""
+        nb = r.shape[-1] // self.bin_n
+        r = r[..., self.fast_fibres, :nb * self.bin_n]
+        fine = r.reshape(*r.shape[:-1], nb * self.ratio, self.fine_n).mean(-1)
+        fine = torch.cat([fine[..., :1].expand(*fine.shape[:-1], self.fast_hist), fine], -1)
+        return self.fast_power(fine, self.fast_hist)
+
     def movmean(self, a):
         W = self.W
         c = torch.cumsum(torch.nn.functional.pad(a, (1, 0)), -1)
@@ -300,9 +363,10 @@ class Observer:
         pos = torch.arange(npos)
         return (pos >= t0b) & (pos + self.W <= nb - t1b)
 
-    def window_d2(self, Rx, Ry, p):
+    def window_d2(self, Rx, Ry, p, Fx=None, Fy=None):
         """Total evidence (d'^2) in each 200 ms window: pattern + texture. Rx, Ry: [..., 128, nb] (a batch works
-        too); returns [..., nb - W + 1]."""
+        too); Fx, Fy: their fast band power [K, ..., F, nb] (fast_power), or None to leave the fast bands out;
+        returns [..., nb - W + 1]."""
         rbar = 0.5 * (Rx + Ry)
         db, xb, yb = self.split(Ry - Rx), self.split(Rx), self.split(Ry)
         d2P = p["kP"] * self.dz * self.dt * db[0] ** 2 / (rbar + p["r0"])
@@ -312,14 +376,21 @@ class Observer:
         ey = self.movmean(yb[1:] ** 2) / (my + p["r0"]) ** 2
         mask = self.mask.to(ex.device, ex.dtype).reshape(self.mask.shape[0], *[1] * (ex.dim() - 3), -1, 1)
         lr2 = p["kS"] * self.dz * torch.log((ey + p["e0"]) / (ex + p["e0"])) ** 2 * mask
-        return P_w + lr2.sum((0, -2))
+        tot = P_w + lr2.sum((0, -2))
+        if Fx is not None:                                            # fast bands: the same comparison, own gain
+            fx = self.movmean(Fx) / (mx[..., self.fast_fibres, :] + p["r0"]) ** 2
+            fy = self.movmean(Fy) / (my[..., self.fast_fibres, :] + p["r0"]) ** 2
+            fm = self.fast_mask.to(fx.device, fx.dtype).reshape(self.fast_mask.shape[0], *[1] * (fx.dim() - 3), -1, 1)
+            tot = tot + (p["kF"] * self.dz * torch.log((fy + p["e0"]) / (fx + p["e0"])) ** 2 * fm).sum((0, -2))
+        return tot
 
 
-def window_d2_blocks(ob, bx, by, p=CONSTANTS, block_s=OBSERVER_BLOCK_S, context_s=OBSERVER_CONTEXT_S):
-    """Observer.window_d2 over binned rates [128, nb], computed in blocks of about block_s seconds of window
-    positions, so memory does not grow with the length. Each block starts context_s seconds early, so that the
-    observers' slow filters have settled: what is left of the history before that is below 1e-7 of it (the slowest
-    filter, the 4 Hz band, decays about e^-9 per second). The first block starts at the signal's start, as before."""
+def window_d2_blocks(ob, bx, by, p=CONSTANTS, fx=None, fy=None, block_s=OBSERVER_BLOCK_S, context_s=OBSERVER_CONTEXT_S):
+    """Observer.window_d2 over binned rates [128, nb] (and fast band power [K, 128, nb], if given), computed in blocks
+    of about block_s seconds of window positions, so memory does not grow with the length. Each block starts context_s
+    seconds early, so that the observers' slow filters have settled: what is left of the history before that is below
+    1e-7 of it (the slowest filter, the 4 Hz band, decays about e^-9 per second). The first block starts at the
+    signal's start, as before."""
     nb = bx.shape[-1]
     npos = nb - ob.W + 1
     per_block = max(1, int(round(block_s / ob.dt)))
@@ -329,14 +400,15 @@ def window_d2_blocks(ob, bx, by, p=CONSTANTS, block_s=OBSERVER_BLOCK_S, context_
         q1 = min(npos, q0 + per_block)
         s0 = q0 - ctx if q0 > ctx else 0
         e = q1 + ob.W - 1
-        out.append(ob.window_d2(bx[:, s0:e], by[:, s0:e], p)[q0 - s0:])
+        f = (fx[..., s0:e], fy[..., s0:e]) if fx is not None else (None, None)
+        out.append(ob.window_d2(bx[:, s0:e], by[:, s0:e], p, *f)[q0 - s0:])
     return torch.cat(out) if out else torch.zeros(0, dtype=DT)
 
 
-def scores(ob, bx, by, p=CONSTANTS, **blocks):
-    """D_peak (most noticeable 200 ms window) and D_med (median window) as tensors, from binned rates. blocks are
-    passed to window_d2_blocks (one huge block, e.g. block_s=1e9, computes all windows at once)."""
-    tot = window_d2_blocks(ob, bx, by, p, **blocks)
+def scores(ob, bx, by, p=CONSTANTS, fx=None, fy=None, **blocks):
+    """D_peak (most noticeable 200 ms window) and D_med (median window) as tensors, from binned rates (and fast band
+    power). blocks are passed to window_d2_blocks (one huge block, e.g. block_s=1e9, computes all windows at once)."""
+    tot = window_d2_blocks(ob, bx, by, p, fx, fy, **blocks)
     ok = ob.valid(len(tot), bx.shape[-1])
     d2 = tot[ok]
     return dict(D_peak=torch.sqrt(d2.max()), D_med=torch.median(torch.sqrt(torch.clamp(d2, min=0))))
