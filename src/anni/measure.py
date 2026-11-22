@@ -87,9 +87,10 @@ class ANNI:
 
     def _forward(self, px, py):
         """Pressure signals -> {"D_peak", "D_med"} tensors. Both run in blocks, so long signals fit in memory."""
-        bx = self._nerve.binned_rates(px, self._observer.bin_n)
-        by = self._nerve.binned_rates(py, self._observer.bin_n)
-        return _core.scores(self._observer, bx, by)
+        ob = self._observer
+        bx, fx = self._nerve.binned_rates(px, ob.bin_n, fast=ob)
+        by, fy = self._nerve.binned_rates(py, ob.bin_n, fast=ob)
+        return _core.scores(ob, bx, by, fx=fx, fy=fy)
 
     @staticmethod
     def _check(s, name):

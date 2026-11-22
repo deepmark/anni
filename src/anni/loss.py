@@ -56,6 +56,7 @@ class ANNILoss(torch.nn.Module):
         nv, ob = self._nerve, self._observer
         dev = fn(nv.g).device
         nv.g, nv.lp, ob.mask = nv.g.to(dev), nv.lp.to(dev), ob.mask.to(dev)
+        ob.fast_h, ob.fast_mask = ob.fast_h.to(dev), ob.fast_mask.to(dev)
         nv.device, nv._spectra = dev, None
         return self
 
@@ -87,22 +88,23 @@ class ANNILoss(torch.nn.Module):
                 raise ValueError(f"reference is silent (or constant) in batch example(s) {silent}: its playback "
                                  "level cannot be set; leave such examples out of the batch")
             gain = torch.stack([_core.pa_gain(r, self.level) for r in x])[:, None]
-            rx = self._rates(gain * x)
-        ry = self._rates(gain * y)                                     # one gain for both, set by the reference
-        d2 = self._observer.window_d2(rx, ry, _core.CONSTANTS)
+            rx, fx = self._rates(gain * x)
+        ry, fy = self._rates(gain * y)                                 # one gain for both, set by the reference
+        d2 = self._observer.window_d2(rx, ry, _core.CONSTANTS, fx, fy)
         ok = self._observer.valid(d2.shape[-1], rx.shape[-1]).to(d2.device)
         return d2[..., ok]
 
     def _rates(self, p):
         """Pressure [batch, time] -> ear filter -> nerve model (one or both polarities) -> delay compensation ->
-        1.9 ms bins: [batch, 128, bins]."""
+        1.9 ms bins [batch, 128, bins] and the fast band power [K, batch, 128, bins]."""
         x = _core.ear_filter(p)
         if self.polarities == 2:
             r = self._nerve.forward(torch.cat([x, -x]))
             r = 0.5 * (r[:len(x)] + r[len(x):])
         else:
             r = self._nerve.forward(x)
-        return self._observer.bin(self._nerve.compensate(r))
+        r = self._nerve.compensate(r)
+        return self._observer.bin(r), self._observer.sub_bin_fast(r)
 
     def _check(self, reference, test, sr):
         if sr != _core.SR:

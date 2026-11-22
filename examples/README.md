@@ -14,13 +14,13 @@ ViSQOL audio 4.73, ANNI 0). Bold marks a measure that misses or barely reacts to
 
 | File | Change | PESQ-wb | ViSQOL speech | ViSQOL audio | ANNI D_peak | ANNI D_med |
 |---|---|---|---|---|---|---|
-| `1_hiss` | faint hiss at 10–16 kHz, 30 dB below the speech | **4.64** | **4.62** | 3.13 | 2.96 | 1.42 |
-| `2_burst` | one 10 ms noise burst in a pause | 4.05 | **4.64** | **4.73** | 15.71 | **0.00** |
-| `3_brighter` | brighter tone: +10 dB around 3 kHz | **4.64** | 3.95 | **4.70** | 11.67 | 7.02 |
-| `4_notch` | duller tone: the 1–3 kHz band 15 dB down | **4.37** | 3.33 | **4.64** | 14.75 | 5.90 |
-| `5_echo_hiding` | echo after 1 ms, 6 dB quieter | **4.56** | 3.47 | **4.64** | 4.95 | 2.91 |
-| `6_frame_clicks` | a tiny click every 80 ms | 4.13 | **4.62** | **4.68** | 3.14 | **0.08** |
-| `7_lowpass` | everything above 7 kHz removed | **4.43** | **4.60** | 2.59 | 13.14 | 4.95 |
+| `1_hiss` | faint hiss at 10–16 kHz, 30 dB below the speech | **4.64** | **4.62** | 3.13 | 3.03 | 1.42 |
+| `2_burst` | one 10 ms noise burst in a pause | 4.05 | **4.64** | **4.73** | 15.47 | **0.00** |
+| `3_brighter` | brighter tone: +10 dB around 3 kHz | **4.64** | 3.95 | **4.70** | 11.55 | 6.97 |
+| `4_notch` | duller tone: the 1–3 kHz band 15 dB down | **4.37** | 3.33 | **4.64** | 14.64 | 5.85 |
+| `5_echo_hiding` | echo after 1 ms, 6 dB quieter | **4.56** | 3.47 | **4.64** | 4.90 | 2.89 |
+| `6_frame_clicks` | a tiny click every 80 ms | 4.13 | **4.62** | **4.68** | 3.23 | **0.08** |
+| `7_lowpass` | everything above 7 kHz removed | **4.43** | **4.60** | 2.59 | 13.13 | 4.97 |
 
 ## Audio credit
 
